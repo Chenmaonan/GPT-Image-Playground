@@ -24,6 +24,7 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url)
   if (url.origin !== self.location.origin) return
+  if (url.pathname.endsWith('/runtime-config.json')) return
 
   if (request.mode === 'navigate') {
     event.respondWith(

@@ -1,9 +1,14 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { DEFAULT_PARAMS } from '../types'
 import { createDefaultFalProfile, DEFAULT_SETTINGS, normalizeSettings } from './apiProfiles'
 import { getOutputImageLimitForSettings, normalizeParamsForSettings } from './paramCompatibility'
+import { initializeRuntimeConfig } from './serverApiConfig'
 
 describe('parameter compatibility', () => {
+  beforeEach(() => {
+    initializeRuntimeConfig({ version: 1, serverApi: { enabled: false } })
+  })
+
   it('limits OpenAI output count to 10', () => {
     const settings = normalizeSettings(DEFAULT_SETTINGS)
 
@@ -33,5 +38,51 @@ describe('parameter compatibility', () => {
 
     expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, size: 'auto' }, settings).size).toBe('1360x1024')
     expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, size: 'auto' }, settings, { hasInputImages: true }).size).toBe('auto')
+  })
+
+  it('uses the managed OpenAI profile instead of a stored fal profile', () => {
+    initializeRuntimeConfig({
+      version: 1,
+      serverApi: {
+        enabled: true,
+        provider: 'openai',
+        model: 'server-model',
+        apiMode: 'images',
+        codexCli: false,
+        responseFormatB64Json: false,
+        timeoutSeconds: 600,
+        proxyPath: '/api-proxy',
+      },
+    })
+    const falProfile = createDefaultFalProfile({ apiKey: 'fal-key' })
+    const settings = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      profiles: [falProfile],
+      activeProfileId: falProfile.id,
+    })
+
+    expect(getOutputImageLimitForSettings(settings)).toBe(10)
+    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, n: 8, size: 'auto' }, settings)).toMatchObject({
+      n: 8,
+      size: 'auto',
+      quality: 'auto',
+    })
+  })
+
+  it('uses safe OpenAI parameter defaults when runtime configuration is unavailable', () => {
+    initializeRuntimeConfig(null)
+    const falProfile = createDefaultFalProfile({ apiKey: 'fal-key' })
+    const settings = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      profiles: [falProfile],
+      activeProfileId: falProfile.id,
+    })
+
+    expect(getOutputImageLimitForSettings(settings)).toBe(10)
+    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, n: 8, size: 'auto' }, settings)).toMatchObject({
+      n: 8,
+      size: 'auto',
+      quality: 'auto',
+    })
   })
 })

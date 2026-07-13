@@ -4,6 +4,7 @@ import { useStore, ensureImageThumbnailCached, subscribeImageThumbnail, updateTa
 import { formatImageRatio } from '../lib/size'
 import { getParamDisplay, ActualValueBadge } from '../lib/paramDisplay'
 import { DEFAULT_IMAGES_MODEL, DEFAULT_FAL_MODEL } from '../lib/apiProfiles'
+import { getRuntimeConfigState, isServerApiConfigEnabled } from '../lib/serverApiConfig'
 import { CodeIcon } from './icons'
 
 interface Props {
@@ -33,6 +34,8 @@ export default function TaskCard({
   const [swipeActionActive, setSwipeActionActive] = useState(false)
   const toggleTaskSelection = useStore((s) => s.toggleTaskSelection)
   const settings = useStore((s) => s.settings)
+  const runtimeConfigState = getRuntimeConfigState()
+  const serverManaged = isServerApiConfigEnabled() || runtimeConfigState.status !== 'ready'
   const touchStartRef = useRef<{ x: number; y: number } | null>(null)
   const swipeResetTimerRef = useRef<number | null>(null)
   const suppressClickUntilRef = useRef(0)
@@ -504,7 +507,7 @@ export default function TaskCard({
               <button
                 onClick={onReuse}
                 className="p-1.5 rounded-md hover:bg-blue-50 dark:hover:bg-blue-950/30 text-gray-400 hover:text-blue-500 transition"
-                title="复用配置"
+                title={serverManaged ? '复用输入与参数' : '复用配置'}
               >
                 <svg
                   className="w-4 h-4"

@@ -1,13 +1,20 @@
 import { DEFAULT_PARAMS, type AppSettings, type TaskParams } from '../types'
-import { getActiveApiProfile } from './apiProfiles'
+import { createDefaultOpenAIProfile } from './apiProfiles'
+import { getEffectiveApiProfile, getRuntimeConfigState } from './serverApiConfig'
 import { normalizeImageSize } from './size'
 
 export const DEFAULT_FAL_IMAGE_SIZE = '1360x1024'
 export const MAX_FAL_OUTPUT_IMAGES = 4
 export const MAX_OPENAI_OUTPUT_IMAGES = 10
 
+function getCompatibilityProfile(settings: AppSettings) {
+  return getRuntimeConfigState().status === 'ready'
+    ? getEffectiveApiProfile(settings)
+    : createDefaultOpenAIProfile()
+}
+
 export function getOutputImageLimitForSettings(settings: AppSettings) {
-  return getActiveApiProfile(settings).provider === 'fal' ? MAX_FAL_OUTPUT_IMAGES : MAX_OPENAI_OUTPUT_IMAGES
+  return getCompatibilityProfile(settings).provider === 'fal' ? MAX_FAL_OUTPUT_IMAGES : MAX_OPENAI_OUTPUT_IMAGES
 }
 
 export function normalizeParamsForSettings(
@@ -15,7 +22,7 @@ export function normalizeParamsForSettings(
   settings: AppSettings,
   options: { hasInputImages?: boolean } = {},
 ): TaskParams {
-  const activeProfile = getActiveApiProfile(settings)
+  const activeProfile = getCompatibilityProfile(settings)
   const outputImageLimit = getOutputImageLimitForSettings(settings)
   const nextParams: TaskParams = {
     ...params,

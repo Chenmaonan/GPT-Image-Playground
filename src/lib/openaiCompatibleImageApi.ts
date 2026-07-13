@@ -1,6 +1,7 @@
 import type { ApiProfile, CustomProviderDefinition, CustomProviderPollMapping, CustomProviderResultMapping, CustomProviderSubmitMapping, ImageApiResponse, ResponsesApiResponse, TaskParams } from '../types'
 import { dataUrlToBlob, imageDataUrlToPngBlob, maskDataUrlToPngBlob } from './canvasImage'
 import { buildApiUrl, readClientDevProxyConfig, shouldUseApiProxy } from './devProxy'
+import { getServerApiProxyPath, isServerApiConfigEnabled } from './serverApiConfig'
 import {
   assertImageInputPayloadSize,
   assertMaskEditFileSize,
@@ -77,9 +78,22 @@ function normalizeImageApiPayload(value: unknown): ImageApiResponse {
 }
 
 function createRequestHeaders(profile: ApiProfile): Record<string, string> {
+  if (isServerApiConfigEnabled()) return {}
   return {
     Authorization: `Bearer ${profile.apiKey}`,
   }
+}
+
+function buildOpenAIRequestUrl(
+  profile: ApiProfile,
+  path: string,
+  proxyConfig: ReturnType<typeof readClientDevProxyConfig>,
+  useApiProxy: boolean,
+): string {
+  if (isServerApiConfigEnabled()) {
+    return `${getServerApiProxyPath()}/${path.replace(/^\/+/, '').replace(/^v1\//, '')}`
+  }
+  return buildApiUrl(profile.baseUrl, path, proxyConfig, useApiProxy)
 }
 
 function createResponsesImageTool(
@@ -335,7 +349,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
         formData.append('mask', maskBlob, 'mask.png')
       }
 
-      response = await fetch(buildApiUrl(profile.baseUrl, paths.editPath, proxyConfig, useApiProxy), {
+      response = await fetch(buildOpenAIRequestUrl(profile, paths.editPath, proxyConfig, useApiProxy), {
         method: 'POST',
         headers: requestHeaders,
         cache: 'no-store',
@@ -365,7 +379,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
         body.response_format = 'b64_json'
       }
 
-      response = await fetch(buildApiUrl(profile.baseUrl, paths.generationPath, proxyConfig, useApiProxy), {
+      response = await fetch(buildOpenAIRequestUrl(profile, paths.generationPath, proxyConfig, useApiProxy), {
         method: 'POST',
         headers: {
           ...requestHeaders,
@@ -743,7 +757,7 @@ async function callResponsesImageApiSingle(opts: CallApiOptions, profile: ApiPro
       tool_choice: 'required',
     }
 
-    const response = await fetch(buildApiUrl(profile.baseUrl, 'responses', proxyConfig, useApiProxy), {
+    const response = await fetch(buildOpenAIRequestUrl(profile, 'responses', proxyConfig, useApiProxy), {
       method: 'POST',
       headers: {
         ...requestHeaders,

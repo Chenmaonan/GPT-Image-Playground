@@ -33,6 +33,13 @@ import {
 import { callImageApi } from './lib/api'
 import { IMAGE_FETCH_CORS_HINT } from './lib/imageApiShared'
 import { getFalErrorMessage, getFalQueuedImageResult } from './lib/falAiImageApi'
+import {
+  getEffectiveApiProfile,
+  getEffectiveSettings,
+  getRuntimeConfigState,
+  isServerApiConfigEnabled,
+  sanitizeSettingsPatchForServerMode,
+} from './lib/serverApiConfig'
 import { getCustomQueuedImageResult } from './lib/openaiCompatibleImageApi'
 import { validateMaskMatchesImage } from './lib/canvasImage'
 import { orderInputImagesForMask } from './lib/mask'
@@ -57,6 +64,14 @@ const falRecoveryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const customRecoveryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const openAIWatchdogTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const OPENAI_INTERRUPTED_ERROR = '请求中断'
+const MANAGED_API_RECOVERY_ERROR = '服务端统一 API 配置已启用，无法恢复原 API 任务'
+const RUNTIME_API_RECOVERY_ERROR = '服务端 API 配置不可用，无法恢复原 API 任务'
+
+function getApiRecoveryRestrictionError(): string | null {
+  const runtimeState = getRuntimeConfigState()
+  if (runtimeState.status !== 'ready') return RUNTIME_API_RECOVERY_ERROR
+  return runtimeState.config.serverApi.enabled ? MANAGED_API_RECOVERY_ERROR : null
+}
 
 function createOpenAITimeoutError(timeoutSeconds: number) {
   return `请求超时：超过 ${timeoutSeconds} 秒仍未完成，请稍后重试或提高超时时间。`
@@ -386,7 +401,7 @@ export const useStore = create<AppState>()(
       settings: { ...DEFAULT_SETTINGS },
       setSettings: (s) => set((st) => {
         const previous = normalizeSettings(st.settings)
-        const incoming = s as Partial<AppSettings>
+        const incoming = sanitizeSettingsPatchForServerMode(s as Partial<AppSettings>)
         const hasLegacyOverrides =
           incoming.baseUrl !== undefined ||
           incoming.apiKey !== undefined ||
@@ -595,7 +610,8 @@ function genId(): string {
 }
 
 export function getCodexCliPromptKey(settings: AppSettings): string {
-  const profile = getActiveApiProfile(settings)
+  if (getRuntimeConfigState().status !== 'ready') return 'runtime-config-unavailable'
+  const profile = getEffectiveApiProfile(settings)
   return `${profile.baseUrl}\n${profile.apiKey}`
 }
 
@@ -615,15 +631,25 @@ function isAsyncCustomProviderTask(settings: AppSettings, provider: string, hasI
 }
 
 export function markInterruptedOpenAIRunningTasks(tasks: TaskRecord[], now = Date.now()) {
+  const recoveryRestrictionError = getApiRecoveryRestrictionError()
   const interruptedTasks: TaskRecord[] = []
   const updatedTasks = tasks.map((task) => {
-    if (!isRunningOpenAITask(task) || task.customTaskId) return task
+    const incompatibleRecoveryTask = recoveryRestrictionError !== null && (
+      task.status === 'running' || task.falRecoverable || task.customRecoverable
+    ) && (
+      task.apiProvider === 'fal' ||
+      Boolean(task.customTaskId) ||
+      Boolean(task.apiProvider && task.apiProvider !== 'openai')
+    )
+    const interruptedOpenAITask = isRunningOpenAITask(task) && !task.customTaskId
+    if (!incompatibleRecoveryTask && !interruptedOpenAITask) return task
 
     const updated: TaskRecord = {
       ...task,
       status: 'error',
-      error: OPENAI_INTERRUPTED_ERROR,
+      error: incompatibleRecoveryTask ? recoveryRestrictionError : OPENAI_INTERRUPTED_ERROR,
       falRecoverable: false,
+      customRecoverable: false,
       finishedAt: now,
       elapsed: Math.max(0, now - task.createdAt),
     }
@@ -672,8 +698,10 @@ function scheduleOpenAIWatchdog(taskId: string, timeoutSeconds: number) {
 export function showCodexCliPrompt(force = false, reason = '接口返回的提示词已被改写') {
   const state = useStore.getState()
   const settings = state.settings
+  if (getRuntimeConfigState().status !== 'ready' || isServerApiConfigEnabled()) return
+  const activeProfile = getEffectiveApiProfile(settings)
   const promptKey = getCodexCliPromptKey(settings)
-  if (!force && (settings.codexCli || state.dismissedCodexCliPrompts.includes(promptKey))) return
+  if (!force && (activeProfile.codexCli || state.dismissedCodexCliPrompts.includes(promptKey))) return
 
   state.setConfirmDialog({
     title: '检测到 Codex CLI API',
@@ -717,6 +745,7 @@ function getCustomRecoveryProfile(settings: AppSettings, task: TaskRecord) {
 }
 
 export function getTaskApiProfile(settings: AppSettings, task: TaskRecord): ApiProfile | null {
+  if (isServerApiConfigEnabled()) return getEffectiveApiProfile(settings)
   const normalized = normalizeSettings(settings)
   const provider = task.apiProvider
 
@@ -746,6 +775,7 @@ export function getTaskApiProfile(settings: AppSettings, task: TaskRecord): ApiP
 }
 
 function createSettingsForApiProfile(settings: AppSettings, profile: ApiProfile): AppSettings {
+  if (isServerApiConfigEnabled()) return getEffectiveSettings(settings)
   const normalized = normalizeSettings(settings)
   return normalizeSettings({
     ...normalized,
@@ -762,6 +792,7 @@ function createSettingsForApiProfile(settings: AppSettings, profile: ApiProfile)
 }
 
 function getReusedTaskApiProfile(settings: AppSettings, profileId: string | null): ApiProfile | null {
+  if (isServerApiConfigEnabled()) return null
   if (!profileId) return null
   return normalizeSettings(settings).profiles.find((profile) => profile.id === profileId) ?? null
 }
@@ -839,6 +870,28 @@ function clearCustomRecoveryTimer(taskId: string) {
   const timer = customRecoveryTimers.get(taskId)
   if (timer) clearTimeout(timer)
   customRecoveryTimers.delete(taskId)
+}
+
+async function terminateRestrictedRecoveryTask(taskId: string, error: string) {
+  clearFalRecoveryTimer(taskId)
+  clearCustomRecoveryTimer(taskId)
+
+  const { tasks, setTasks } = useStore.getState()
+  const task = tasks.find((item) => item.id === taskId)
+  if (!task || task.status === 'done') return
+
+  const now = Date.now()
+  const updatedTask: TaskRecord = {
+    ...task,
+    status: 'error',
+    error,
+    falRecoverable: false,
+    customRecoverable: false,
+    finishedAt: now,
+    elapsed: Math.max(0, now - task.createdAt),
+  }
+  setTasks(tasks.map((item) => item.id === taskId ? updatedTask : item))
+  await putTask(updatedTask)
 }
 
 function scheduleCustomRecovery(taskId: string, delayMs = CUSTOM_RECOVERY_POLL_MS) {
@@ -935,10 +988,17 @@ async function completeRecoveredFalTask(task: TaskRecord, result: Awaited<Return
 }
 
 async function recoverFalTask(taskId: string) {
-  const { settings, tasks } = useStore.getState()
+  const { tasks } = useStore.getState()
   const task = tasks.find((item) => item.id === taskId)
   if (!task || task.apiProvider !== 'fal' || !task.falRequestId || !task.falEndpoint || task.status === 'done') return
 
+  const recoveryRestrictionError = getApiRecoveryRestrictionError()
+  if (recoveryRestrictionError) {
+    await terminateRestrictedRecoveryTask(taskId, recoveryRestrictionError)
+    return
+  }
+
+  const { settings } = useStore.getState()
   const profile = getFalRecoveryProfile(settings, task)
   if (!profile) {
     scheduleFalRecovery(taskId)
@@ -1038,8 +1098,14 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
   const { settings, prompt, inputImages, maskDraft, params, reusedTaskApiProfileId, reusedTaskApiProfileName, reusedTaskApiProfileMissing, showToast, setConfirmDialog } =
     useStore.getState()
 
-  const normalizedSettings = normalizeSettings(settings)
-  let activeProfile = getActiveApiProfile(settings)
+  if (getRuntimeConfigState().status !== 'ready') {
+    showToast('服务端 API 配置不可用，请联系部署管理员', 'error')
+    return
+  }
+
+  const effectiveSettings = getEffectiveSettings(settings)
+  const normalizedSettings = normalizeSettings(effectiveSettings)
+  let activeProfile = getEffectiveApiProfile(effectiveSettings)
   let requestSettings = createSettingsForApiProfile(normalizedSettings, activeProfile)
   if (normalizedSettings.reuseTaskApiProfileTemporarily && (reusedTaskApiProfileId || reusedTaskApiProfileMissing)) {
     const reusedProfile = getReusedTaskApiProfile(normalizedSettings, reusedTaskApiProfileId)
@@ -1064,9 +1130,10 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
     }
   }
 
-  if (validateApiProfile(activeProfile)) {
-    showToast(`请先完善请求 API 配置：${validateApiProfile(activeProfile)}`, 'error')
-    useStore.getState().setShowSettings(true)
+  const profileValidationError = isServerApiConfigEnabled() ? null : validateApiProfile(activeProfile)
+  if (profileValidationError) {
+    showToast(`请先完善请求 API 配置：${profileValidationError}`, 'error')
+    if (!isServerApiConfigEnabled()) useStore.getState().setShowSettings(true)
     return
   }
 
@@ -1156,7 +1223,19 @@ async function executeTask(taskId: string) {
   const { settings } = useStore.getState()
   const task = useStore.getState().tasks.find((t) => t.id === taskId)
   if (!task) return
-  const taskProfile = getTaskApiProfile(settings, task)
+  if (getRuntimeConfigState().status !== 'ready') {
+    updateTaskInStore(taskId, {
+      status: 'error',
+      error: '服务端 API 配置不可用，请联系部署管理员',
+      falRecoverable: false,
+      customRecoverable: false,
+      finishedAt: Date.now(),
+      elapsed: Date.now() - task.createdAt,
+    })
+    return
+  }
+  const effectiveSettings = getEffectiveSettings(settings)
+  const taskProfile = getTaskApiProfile(effectiveSettings, task)
   if (!taskProfile && task.apiProfileId) {
     updateTaskInStore(taskId, {
       status: 'error',
@@ -1168,8 +1247,8 @@ async function executeTask(taskId: string) {
     })
     return
   }
-  const activeProfile = taskProfile ?? getActiveApiProfile(settings)
-  const requestSettings = createSettingsForApiProfile(settings, activeProfile)
+  const activeProfile = taskProfile ?? getEffectiveApiProfile(effectiveSettings)
+  const requestSettings = createSettingsForApiProfile(effectiveSettings, activeProfile)
   const taskProvider = task.apiProvider ?? activeProfile.provider
   let falRequestInfo: { requestId: string; endpoint: string } | null = task.falRequestId && task.falEndpoint
     ? { requestId: task.falRequestId, endpoint: task.falEndpoint }
@@ -1353,8 +1432,13 @@ export function updateTaskInStore(taskId: string, patch: Partial<TaskRecord>) {
 /** 重试失败的任务：创建新任务并执行 */
 export async function retryTask(task: TaskRecord) {
   const { settings } = useStore.getState()
-  const activeProfile = getActiveApiProfile(settings)
-  const normalizedParams = normalizeParamsForSettings(task.params, settings, { hasInputImages: task.inputImageIds.length > 0 })
+  if (getRuntimeConfigState().status !== 'ready') {
+    useStore.getState().showToast('服务端 API 配置不可用，请联系部署管理员', 'error')
+    return
+  }
+  const effectiveSettings = getEffectiveSettings(settings)
+  const activeProfile = getEffectiveApiProfile(effectiveSettings)
+  const normalizedParams = normalizeParamsForSettings(task.params, effectiveSettings, { hasInputImages: task.inputImageIds.length > 0 })
   const taskId = genId()
   const newTask: TaskRecord = {
     id: taskId,
@@ -1385,11 +1469,17 @@ export async function retryTask(task: TaskRecord) {
 /** 复用配置 */
 export async function reuseConfig(task: TaskRecord) {
   const { settings, setPrompt, setParams, setInputImages, setMaskDraft, clearMaskDraft, showToast, setConfirmDialog, setReusedTaskApiProfile } = useStore.getState()
-  const normalizedSettings = normalizeSettings(settings)
-  const currentProfile = getActiveApiProfile(settings)
-  const matchedProfile = normalizedSettings.reuseTaskApiProfileTemporarily ? getTaskApiProfile(normalizedSettings, task) : null
+  const runtimeState = getRuntimeConfigState()
+  const serverRestricted = runtimeState.status !== 'ready' || isServerApiConfigEnabled()
+  const normalizedSettings = runtimeState.status === 'ready'
+    ? normalizeSettings(getEffectiveSettings(settings))
+    : normalizeSettings(settings)
+  const currentProfile = runtimeState.status === 'ready'
+    ? getEffectiveApiProfile(normalizedSettings)
+    : getActiveApiProfile(settings)
+  const matchedProfile = !serverRestricted && normalizedSettings.reuseTaskApiProfileTemporarily ? getTaskApiProfile(normalizedSettings, task) : null
   const shouldTemporarilyReuseProfile = Boolean(matchedProfile && matchedProfile.id !== currentProfile.id)
-  const missingReusedProfile = normalizedSettings.reuseTaskApiProfileTemporarily && !matchedProfile
+  const missingReusedProfile = !serverRestricted && normalizedSettings.reuseTaskApiProfileTemporarily && !matchedProfile
   const taskProfileName = matchedProfile?.name ?? getTaskApiProfileName(task)
   const paramsSettings = shouldTemporarilyReuseProfile && matchedProfile ? createSettingsForApiProfile(normalizedSettings, matchedProfile) : normalizedSettings
 
@@ -1440,7 +1530,9 @@ export async function reuseConfig(task: TaskRecord) {
   }
 
   showToast(
-    shouldTemporarilyReuseProfile && matchedProfile
+    serverRestricted
+      ? '已复用输入与参数'
+      : shouldTemporarilyReuseProfile && matchedProfile
       ? `已临时复用该任务的 API 配置「${matchedProfile.name}」`
       : '已复用配置到输入框',
     'success',
@@ -1630,10 +1722,17 @@ async function completeRecoveredCustomTask(task: TaskRecord, result: Awaited<Ret
 }
 
 async function recoverCustomTask(taskId: string) {
-  const { settings, tasks } = useStore.getState()
+  const { tasks } = useStore.getState()
   const task = tasks.find((item) => item.id === taskId)
   if (!task || !task.customTaskId || task.status === 'done') return
 
+  const recoveryRestrictionError = getApiRecoveryRestrictionError()
+  if (recoveryRestrictionError) {
+    await terminateRestrictedRecoveryTask(taskId, recoveryRestrictionError)
+    return
+  }
+
+  const { settings } = useStore.getState()
   const profile = getCustomRecoveryProfile(settings, task)
   const customProvider = task.apiProvider ? getCustomProviderDefinition(settings, task.apiProvider) : null
   if (!profile || !customProvider?.poll) {

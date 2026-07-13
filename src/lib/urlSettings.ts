@@ -8,6 +8,7 @@ import {
   mergeImportedSettings,
   normalizeSettings,
 } from './apiProfiles'
+import { getRuntimeConfigState, isServerApiConfigEnabled } from './serverApiConfig'
 
 const URL_SETTING_KEYS = ['settings', 'apiUrl', 'apiKey', 'codexCli', 'apiMode', 'model']
 
@@ -80,6 +81,9 @@ export function clearUrlSettingParams(searchParams: URLSearchParams) {
 }
 
 export function buildSettingsFromUrlParams(currentSettings: Partial<AppSettings> | unknown, searchParams: URLSearchParams): Partial<AppSettings> {
+  const runtimeState = getRuntimeConfigState()
+  if (runtimeState.status !== 'ready' || isServerApiConfigEnabled()) return {}
+
   const importedSettings = getUrlSettingsPayload(searchParams)
   const apiUrlParam = searchParams.get('apiUrl')
   const apiKeyParam = searchParams.get('apiKey')

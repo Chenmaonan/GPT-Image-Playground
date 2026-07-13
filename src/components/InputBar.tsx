@@ -3,6 +3,12 @@ import { createPortal } from 'react-dom'
 import { useStore, submitTask, addImageFromFile, updateTaskInStore, removeMultipleTasks, getCachedImage, ensureImageCached } from '../store'
 import { DEFAULT_PARAMS } from '../types'
 import { getActiveApiProfile, normalizeSettings } from '../lib/apiProfiles'
+import {
+  getEffectiveApiProfile,
+  getRuntimeConfigState,
+  isServerApiConfigEnabled,
+  isServerApiConfigUsable,
+} from '../lib/serverApiConfig'
 import { DEFAULT_FAL_IMAGE_SIZE, getChangedParams, getOutputImageLimitForSettings, normalizeParamsForSettings } from '../lib/paramCompatibility'
 import { getAtImageQuery, getImageMentionLabel, getPromptIndexFromVisibleIndex, getPromptMentionParts, getSelectedImageMentionLabel, imageMentionMatches, insertImageMentionAtVisibleRange, isCursorInSelectedImageMention, stripImageMentionMarkers } from '../lib/promptImageMentions'
 import { normalizeImageSize } from '../lib/size'
@@ -450,19 +456,33 @@ export default function InputBar() {
   const dragCounter = useRef(0)
   const isMobile = useIsMobile()
 
-  const currentActiveProfile = useMemo(() => getActiveApiProfile(settings), [settings])
+  const runtimeConfigState = getRuntimeConfigState()
+  const serverManaged = isServerApiConfigEnabled() || runtimeConfigState.status !== 'ready'
+  const serverConfigUsable = isServerApiConfigUsable()
+  const currentActiveProfile = useMemo(() => (
+    serverManaged && !serverConfigUsable
+      ? getActiveApiProfile(settings)
+      : getEffectiveApiProfile(settings)
+  ), [serverConfigUsable, serverManaged, settings])
   const activeProfile = useMemo(() => (
-    settings.reuseTaskApiProfileTemporarily && reusedTaskApiProfileId
+    !serverManaged && settings.reuseTaskApiProfileTemporarily && reusedTaskApiProfileId
       ? settings.profiles.find((profile) => profile.id === reusedTaskApiProfileId) ?? currentActiveProfile
       : currentActiveProfile
-  ), [currentActiveProfile, reusedTaskApiProfileId, settings])
-  const effectiveSettings = useMemo(() => (
-    activeProfile.id === currentActiveProfile.id
-      ? settings
-      : normalizeSettings({ ...settings, activeProfileId: activeProfile.id })
-  ), [activeProfile.id, currentActiveProfile.id, settings])
-  const hasSubmitApiConfig = Boolean(activeProfile.apiKey)
+  ), [currentActiveProfile, reusedTaskApiProfileId, serverManaged, settings])
+  const effectiveSettings = useMemo(() => {
+    if (!serverManaged && activeProfile.id === currentActiveProfile.id) return settings
+
+    const profiles = settings.profiles.some((profile) => profile.id === activeProfile.id)
+      ? settings.profiles.map((profile) => profile.id === activeProfile.id ? activeProfile : profile)
+      : [...settings.profiles, activeProfile]
+    return normalizeSettings({ ...settings, profiles, activeProfileId: activeProfile.id })
+  }, [activeProfile, currentActiveProfile.id, serverManaged, settings])
+  const hasSubmitApiConfig = serverManaged ? serverConfigUsable : Boolean(activeProfile.apiKey)
   const canSubmit = Boolean(prompt.trim() && hasSubmitApiConfig)
+  const missingApiConfigMessage = serverManaged
+    ? '服务端 API 配置不可用，请联系部署管理员'
+    : '尚未完成 API 配置，请在右上角设置中进行'
+  const missingApiConfigTitle = serverManaged ? missingApiConfigMessage : '请先配置 API'
   const activeProvider = activeProfile.provider
   const isFalProvider = activeProvider === 'fal'
   const moderationDisabled = activeProfile.apiMode === 'responses' || isFalProvider
@@ -722,7 +742,7 @@ export default function InputBar() {
   }
 
   const showQualityHint = () => {
-    if (settings.codexCli || isFalProvider) setQualityHintVisible(true)
+    if (activeProfile.codexCli || isFalProvider) setQualityHintVisible(true)
   }
 
   const showSizeHint = () => {
@@ -762,7 +782,7 @@ export default function InputBar() {
   }
 
   const startQualityHintTouch = () => {
-    if (!settings.codexCli && !isFalProvider) return
+    if (!activeProfile.codexCli && !isFalProvider) return
     qualityHintTimerRef.current = window.setTimeout(() => {
       setQualityHintVisible(true)
       qualityHintTimerRef.current = null
@@ -1495,18 +1515,18 @@ export default function InputBar() {
       >
         <span className="text-gray-400 dark:text-gray-500 ml-1">质量</span>
         <Select
-          value={settings.codexCli ? 'auto' : isFalProvider && params.quality === 'auto' ? 'high' : params.quality}
+          value={activeProfile.codexCli ? 'auto' : isFalProvider && params.quality === 'auto' ? 'high' : params.quality}
           onChange={(val) => {
-            if (!settings.codexCli) setParams({ quality: val as any })
+            if (!activeProfile.codexCli) setParams({ quality: val as any })
           }}
           options={qualityOptions}
-          disabled={settings.codexCli}
-          className={settings.codexCli
+          disabled={activeProfile.codexCli}
+          className={activeProfile.codexCli
             ? 'px-3 py-1.5 rounded-xl border border-gray-200/60 dark:border-white/[0.08] bg-gray-100/50 dark:bg-white/[0.05] opacity-50 cursor-not-allowed text-xs transition-all duration-200 shadow-sm'
             : selectClass}
         />
         <ButtonTooltip
-          visible={(settings.codexCli || isFalProvider) && qualityHintVisible}
+          visible={(activeProfile.codexCli || isFalProvider) && qualityHintVisible}
           text={isFalProvider ? <>fal.ai 不支持 <code className="rounded bg-white/10 px-1 py-0.5 font-mono">auto</code> 质量参数</> : 'Codex CLI 不支持质量参数'}
         />
       </label>
@@ -1867,16 +1887,19 @@ export default function InputBar() {
                   onMouseEnter={() => setSubmitHover(true)}
                   onMouseLeave={() => setSubmitHover(false)}
                 >
-                  <ButtonTooltip visible={!hasSubmitApiConfig && submitHover} text="尚未完成 API 配置，请在右上角设置中进行" />
+                  <ButtonTooltip visible={!hasSubmitApiConfig && submitHover} text={missingApiConfigMessage} />
                   <button
-                    onClick={() => hasSubmitApiConfig ? submitTask() : setShowSettings(true)}
-                    disabled={hasSubmitApiConfig ? !canSubmit : false}
+                    onClick={() => {
+                      if (hasSubmitApiConfig) submitTask()
+                      else if (!serverManaged) setShowSettings(true)
+                    }}
+                    disabled={hasSubmitApiConfig ? !canSubmit : serverManaged}
                     className={`p-2.5 rounded-xl transition-all shadow-sm hover:shadow ${
                       !hasSubmitApiConfig
-                        ? 'bg-gray-300 dark:bg-white/[0.06] text-white cursor-pointer'
+                        ? `bg-gray-300 dark:bg-white/[0.06] text-white ${serverManaged ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`
                         : 'bg-blue-500 text-white hover:bg-blue-600 disabled:bg-gray-300 dark:disabled:bg-white/[0.04] disabled:opacity-50 disabled:cursor-not-allowed'
                     }`}
-                    title={hasSubmitApiConfig ? (maskDraft ? '遮罩编辑 (Ctrl+Enter)' : '生成 (Ctrl+Enter)') : '请先配置 API'}
+                    title={hasSubmitApiConfig ? (maskDraft ? '遮罩编辑 (Ctrl+Enter)' : '生成 (Ctrl+Enter)') : missingApiConfigTitle}
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
@@ -1921,15 +1944,19 @@ export default function InputBar() {
                   onMouseEnter={() => setSubmitHover(true)}
                   onMouseLeave={() => setSubmitHover(false)}
                 >
-                  <ButtonTooltip visible={!hasSubmitApiConfig && submitHover} text="尚未完成 API 配置，请在右上角设置中进行" />
+                  <ButtonTooltip visible={!hasSubmitApiConfig && submitHover} text={missingApiConfigMessage} />
                   <button
-                    onClick={() => hasSubmitApiConfig ? submitTask() : setShowSettings(true)}
-                    disabled={hasSubmitApiConfig ? !canSubmit : false}
+                    onClick={() => {
+                      if (hasSubmitApiConfig) submitTask()
+                      else if (!serverManaged) setShowSettings(true)
+                    }}
+                    disabled={hasSubmitApiConfig ? !canSubmit : serverManaged}
                     className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm ${
                       !hasSubmitApiConfig
-                        ? 'bg-gray-300 dark:bg-white/[0.06] text-white cursor-pointer'
+                        ? `bg-gray-300 dark:bg-white/[0.06] text-white ${serverManaged ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`
                         : 'bg-blue-500 text-white hover:bg-blue-600 disabled:bg-gray-300 dark:disabled:bg-white/[0.04] disabled:opacity-50 disabled:cursor-not-allowed'
                     }`}
+                    title={hasSubmitApiConfig ? (maskDraft ? '遮罩编辑' : '生成图像') : missingApiConfigTitle}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />

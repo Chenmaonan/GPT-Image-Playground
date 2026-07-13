@@ -22,6 +22,12 @@ import {
   switchApiProfileProvider,
 } from '../lib/apiProfiles'
 import { copyTextToClipboard, getClipboardFailureMessage } from '../lib/clipboard'
+import {
+  getEffectiveApiProfile,
+  getRuntimeConfigState,
+  isServerApiConfigEnabled,
+  isServerApiConfigUsable,
+} from '../lib/serverApiConfig'
 import type { ApiProfile, AppSettings, CustomProviderDefinition } from '../types'
 import { useCloseOnEscape } from '../hooks/useCloseOnEscape'
 import { usePreventBackgroundScroll } from '../hooks/usePreventBackgroundScroll'
@@ -323,6 +329,10 @@ export default function SettingsModal() {
   const [copyImportUrlProfile, setCopyImportUrlProfile] = useState<ApiProfile | null>(null)
   const [copyImportUrlOptions, setCopyImportUrlOptions] = useState<CopyImportUrlOptions>(readCopyImportUrlOptions)
 
+  const runtimeConfigState = getRuntimeConfigState()
+  const serverManaged = isServerApiConfigEnabled() || runtimeConfigState.status !== 'ready'
+  const serverConfigUsable = isServerApiConfigUsable()
+  const serverProfile = serverConfigUsable ? getEffectiveApiProfile(draft) : null
   const apiProxyConfig = readClientDevProxyConfig()
   const apiProxyAvailable = isApiProxyAvailable(apiProxyConfig)
   const apiProxyLocked = isApiProxyLocked(apiProxyConfig)
@@ -1147,24 +1157,26 @@ export default function SettingsModal() {
                     关闭后，不再持久化提示词和参考图，下次启动会使用空输入框。
                   </div>
                 </div>
-                <div className="block">
-                  <div className="mb-1 flex items-center justify-between">
-                    <span className="block text-sm text-gray-600 dark:text-gray-300">复用配置时临时复用该任务的 API 配置</span>
-                    <button
-                      type="button"
-                      onClick={() => commitSettings({ ...draft, reuseTaskApiProfileTemporarily: !draft.reuseTaskApiProfileTemporarily })}
-                      className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${draft.reuseTaskApiProfileTemporarily ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}
-                      role="switch"
-                      aria-checked={draft.reuseTaskApiProfileTemporarily}
-                      aria-label="复用配置时临时复用该任务的 API 配置"
-                    >
-                      <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${draft.reuseTaskApiProfileTemporarily ? 'translate-x-[14px]' : 'translate-x-[2px]'}`} />
-                    </button>
+                {!serverManaged && (
+                  <div className="block">
+                    <div className="mb-1 flex items-center justify-between">
+                      <span className="block text-sm text-gray-600 dark:text-gray-300">复用配置时临时复用该任务的 API 配置</span>
+                      <button
+                        type="button"
+                        onClick={() => commitSettings({ ...draft, reuseTaskApiProfileTemporarily: !draft.reuseTaskApiProfileTemporarily })}
+                        className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${draft.reuseTaskApiProfileTemporarily ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}
+                        role="switch"
+                        aria-checked={draft.reuseTaskApiProfileTemporarily}
+                        aria-label="复用配置时临时复用该任务的 API 配置"
+                      >
+                        <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${draft.reuseTaskApiProfileTemporarily ? 'translate-x-[14px]' : 'translate-x-[2px]'}`} />
+                      </button>
+                    </div>
+                    <div data-selectable-text className="text-xs text-gray-500 dark:text-gray-500">
+                      开启后，复用历史任务时会临时使用该任务的 API 配置，找不到该配置时提交会提示；关闭后，会继续使用当前的 API 配置。
+                    </div>
                   </div>
-                  <div data-selectable-text className="text-xs text-gray-500 dark:text-gray-500">
-                    开启后，复用历史任务时会临时使用该任务的 API 配置，找不到该配置时提交会提示；关闭后，会继续使用当前的 API 配置。
-                  </div>
-                </div>
+                )}
                 <div className="block">
                   <div className="mb-1 flex items-center justify-between">
                     <span className="block text-sm text-gray-600 dark:text-gray-300">成功任务仍然展示重试按钮</span>
@@ -1187,6 +1199,38 @@ export default function SettingsModal() {
             )}
             
             {activeTab === 'api' && (
+              serverManaged ? (
+                <div className="rounded-2xl border border-blue-200/70 bg-blue-50/70 p-4 dark:border-blue-500/20 dark:bg-blue-500/10">
+                  <h4 className="text-sm font-medium text-blue-900 dark:text-blue-100">API 配置由服务端统一管理</h4>
+                  {!serverConfigUsable && (
+                    <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+                      服务端 API 配置不可用，请联系部署管理员
+                    </p>
+                  )}
+                  <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+                    <div className="rounded-xl bg-white/70 px-3 py-2.5 dark:bg-white/[0.05]">
+                      <dt className="text-xs text-gray-500 dark:text-gray-400">服务商</dt>
+                      <dd className="mt-1 font-medium text-gray-800 dark:text-gray-100">OpenAI 兼容接口</dd>
+                    </div>
+                    <div className="rounded-xl bg-white/70 px-3 py-2.5 dark:bg-white/[0.05]">
+                      <dt className="text-xs text-gray-500 dark:text-gray-400">API 接口</dt>
+                      <dd className="mt-1 font-medium text-gray-800 dark:text-gray-100">
+                        {serverProfile ? (serverProfile.apiMode === 'responses' ? 'Responses API' : 'Images API') : '不可用'}
+                      </dd>
+                    </div>
+                    <div className="rounded-xl bg-white/70 px-3 py-2.5 dark:bg-white/[0.05]">
+                      <dt className="text-xs text-gray-500 dark:text-gray-400">模型</dt>
+                      <dd className="mt-1 break-all font-medium text-gray-800 dark:text-gray-100">{serverProfile?.model || '不可用'}</dd>
+                    </div>
+                    <div className="rounded-xl bg-white/70 px-3 py-2.5 dark:bg-white/[0.05]">
+                      <dt className="text-xs text-gray-500 dark:text-gray-400">请求超时</dt>
+                      <dd className="mt-1 font-medium text-gray-800 dark:text-gray-100">
+                        {serverProfile ? `${serverProfile.timeout} 秒` : '不可用'}
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+              ) : (
               <div className="space-y-4">
                 <div>
                   <div className="mb-1.5 flex items-center gap-1.5">
@@ -1588,6 +1632,7 @@ export default function SettingsModal() {
                 </label>
               )}
             </div>
+              )
             )}
             
             {activeTab === 'data' && (

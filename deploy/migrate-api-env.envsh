@@ -2,13 +2,197 @@
 
 # 兼容旧版本 Docker 环境变量：API_URL 同时作为两个新变量的兜底值。
 DOCKER_LEGACY_API_URL_USED=false
-if [ -n "$API_URL" ]; then
+if [ -n "${API_URL:-}" ]
+then
     DOCKER_LEGACY_API_URL_USED=true
 fi
-
 DEFAULT_API_URL=${DEFAULT_API_URL:-${API_URL:-https://api.openai.com/v1}}
 API_PROXY_URL=${API_PROXY_URL:-${API_URL:-https://api.openai.com/v1}}
 
+# 服务端统一 API 配置默认关闭。该文件在 Nginx 模板展开前由官方 entrypoint source，
+# 因此所有校验与受控变量都必须在这里完成。
+SERVER_API_CONFIG_ENABLED=${SERVER_API_CONFIG_ENABLED-false}
+SERVER_API_UPSTREAM_URL=${SERVER_API_UPSTREAM_URL-}
+SERVER_API_KEY=${SERVER_API_KEY-}
+SERVER_API_MODEL=${SERVER_API_MODEL-gpt-image-2}
+SERVER_API_MODE=${SERVER_API_MODE-images}
+SERVER_API_CODEX_CLI=${SERVER_API_CODEX_CLI-false}
+SERVER_API_RESPONSE_FORMAT_B64_JSON=${SERVER_API_RESPONSE_FORMAT_B64_JSON-false}
+SERVER_API_TIMEOUT_SECONDS=${SERVER_API_TIMEOUT_SECONDS-600}
+
+server_api_config_error() {
+    # 只报告字段与约束，不输出可能包含密钥或上游地址的实际值。
+    echo "Invalid SERVER_API configuration: $1" >&2
+    exit 1
+}
+
+contains_line_break() {
+    value=$1
+    carriage_return=$(printf '\r')
+
+    case "$value" in
+        *"$carriage_return"*) return 0 ;;
+    esac
+    case "$value" in
+        *'
+'*) return 0 ;;
+    esac
+    return 1
+}
+
+require_single_line() {
+    if contains_line_break "$1"; then
+        server_api_config_error "$2 must not contain CR or LF"
+    fi
+}
+
+is_safe_upstream_url() {
+    value=$1
+
+    # 仅允许不含 userinfo、query、fragment 或 Nginx 配置元字符的 HTTP(S) URL。
+    printf '%s\n' "$value" | grep -Eq '^https?://(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?)(:[0-9]{1,5})?(/[A-Za-z0-9._~+,%:@=/:-]*)?$' || return 1
+
+    authority=${value#*://}
+    authority=${authority%%/*}
+    port=
+    case "$authority" in
+        \[*\]:*) port=${authority##*:} ;;
+        \[*\]) ;;
+        *:*) port=${authority##*:} ;;
+    esac
+
+    if [ -n "$port" ] && { [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; }; then
+        return 1
+    fi
+}
+
+require_single_line "$SERVER_API_CONFIG_ENABLED" 'SERVER_API_CONFIG_ENABLED'
+case "$SERVER_API_CONFIG_ENABLED" in
+    true|false) ;;
+    *) server_api_config_error 'SERVER_API_CONFIG_ENABLED must be true or false' ;;
+esac
+
+# 默认公开配置使用固定、安全的值；关闭统一模式时忽略其他 SERVER_API_* 输入，
+# 从而既不影响旧部署，也不会把未校验字符串写进 JSON 或 Nginx 配置。
+RUNTIME_SERVER_API_ENABLED=false
+RUNTIME_SERVER_API_MODEL=gpt-image-2
+RUNTIME_SERVER_API_MODE=images
+RUNTIME_SERVER_API_CODEX_CLI=false
+RUNTIME_SERVER_API_RESPONSE_FORMAT_B64_JSON=false
+RUNTIME_SERVER_API_TIMEOUT_SECONDS=600
+API_PROXY_AUTHORIZATION='$http_authorization'
+SERVER_API_ALLOWED_PATHS='^/api-proxy/((v1/)?(images/generations|images/edits|responses))$'
+API_PROXY_CONNECT_TIMEOUT_SECONDS=60
+API_PROXY_TIMEOUT_SECONDS=600
+API_PROXY_SSL_SERVER_NAME=off
+API_PROXY_SSL_VERIFY=off
+API_PROXY_ERROR_LOG_PATH=/dev/stderr
+API_PROXY_ERROR_LOG_LEVEL=notice
+
+if [ "$SERVER_API_CONFIG_ENABLED" = "true" ]; then
+    require_single_line "$SERVER_API_UPSTREAM_URL" 'SERVER_API_UPSTREAM_URL'
+    require_single_line "$SERVER_API_KEY" 'SERVER_API_KEY'
+    require_single_line "$SERVER_API_MODEL" 'SERVER_API_MODEL'
+    require_single_line "$SERVER_API_MODE" 'SERVER_API_MODE'
+    require_single_line "$SERVER_API_CODEX_CLI" 'SERVER_API_CODEX_CLI'
+    require_single_line "$SERVER_API_RESPONSE_FORMAT_B64_JSON" 'SERVER_API_RESPONSE_FORMAT_B64_JSON'
+    require_single_line "$SERVER_API_TIMEOUT_SECONDS" 'SERVER_API_TIMEOUT_SECONDS'
+
+    is_safe_upstream_url "$SERVER_API_UPSTREAM_URL" || server_api_config_error 'SERVER_API_UPSTREAM_URL must be a safe HTTP(S) URL'
+
+    if [ -z "$SERVER_API_KEY" ] || [ "${#SERVER_API_KEY}" -gt 4096 ] || ! printf '%s\n' "$SERVER_API_KEY" | grep -Eq '^[A-Za-z0-9._~+/=-]+$'; then
+        server_api_config_error 'SERVER_API_KEY is required and contains unsupported characters'
+    fi
+
+    if [ -z "$SERVER_API_MODEL" ] || [ "${#SERVER_API_MODEL}" -gt 256 ] || ! printf '%s\n' "$SERVER_API_MODEL" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._~:/+@=-]*$'; then
+        server_api_config_error 'SERVER_API_MODEL is required and contains unsupported characters'
+    fi
+
+    case "$SERVER_API_MODE" in
+        images|responses) ;;
+        *) server_api_config_error 'SERVER_API_MODE must be images or responses' ;;
+    esac
+
+    case "$SERVER_API_CODEX_CLI" in
+        true|false) ;;
+        *) server_api_config_error 'SERVER_API_CODEX_CLI must be true or false' ;;
+    esac
+
+    case "$SERVER_API_RESPONSE_FORMAT_B64_JSON" in
+        true|false) ;;
+        *) server_api_config_error 'SERVER_API_RESPONSE_FORMAT_B64_JSON must be true or false' ;;
+    esac
+
+    case "$SERVER_API_TIMEOUT_SECONDS" in
+        ''|0*|*[!0-9]*) server_api_config_error 'SERVER_API_TIMEOUT_SECONDS must be an integer from 10 to 600' ;;
+    esac
+    if [ "$SERVER_API_TIMEOUT_SECONDS" -lt 10 ] || [ "$SERVER_API_TIMEOUT_SECONDS" -gt 600 ]; then
+        server_api_config_error 'SERVER_API_TIMEOUT_SECONDS must be an integer from 10 to 600'
+    fi
+
+    # 去掉末尾斜杠，保证 proxy_pass 拼接路径时只有一个分隔斜杠。
+    while [ "${SERVER_API_UPSTREAM_URL%/}" != "$SERVER_API_UPSTREAM_URL" ]; do
+        SERVER_API_UPSTREAM_URL=${SERVER_API_UPSTREAM_URL%/}
+    done
+
+    upstream_authority=${SERVER_API_UPSTREAM_URL#*://}
+    upstream_authority=${upstream_authority%%/*}
+    case "$upstream_authority" in
+        \[*\]*)
+            upstream_host=${upstream_authority#\[}
+            upstream_host=${upstream_host%%\]*}
+            ;;
+        *:*) upstream_host=${upstream_authority%%:*} ;;
+        *) upstream_host=$upstream_authority ;;
+    esac
+    if ! getent hosts "$upstream_host" >/dev/null 2>&1; then
+        server_api_config_error 'SERVER_API_UPSTREAM_URL host could not be resolved'
+    fi
+
+    # 统一模式不消费客户端默认 URL，也不显示旧 API_URL 迁移提示。
+    DEFAULT_API_URL=https://api.openai.com/v1
+    DOCKER_LEGACY_API_URL_USED=false
+    ENABLE_API_PROXY=true
+    LOCK_API_PROXY=true
+    API_PROXY_URL=$SERVER_API_UPSTREAM_URL
+    API_PROXY_AUTHORIZATION="Bearer $SERVER_API_KEY"
+    API_PROXY_CONNECT_TIMEOUT_SECONDS=$SERVER_API_TIMEOUT_SECONDS
+    API_PROXY_TIMEOUT_SECONDS=$SERVER_API_TIMEOUT_SECONDS
+    API_PROXY_SSL_SERVER_NAME=on
+    API_PROXY_SSL_VERIFY=on
+    API_PROXY_ERROR_LOG_PATH=/dev/null
+    API_PROXY_ERROR_LOG_LEVEL=error
+
+    case "$SERVER_API_MODE" in
+        images) SERVER_API_ALLOWED_PATHS='^/api-proxy/((v1/)?(images/generations|images/edits))$' ;;
+        responses) SERVER_API_ALLOWED_PATHS='^/api-proxy/((v1/)?responses)$' ;;
+    esac
+
+    RUNTIME_SERVER_API_ENABLED=true
+    RUNTIME_SERVER_API_MODEL=$SERVER_API_MODEL
+    RUNTIME_SERVER_API_MODE=$SERVER_API_MODE
+    RUNTIME_SERVER_API_CODEX_CLI=$SERVER_API_CODEX_CLI
+    RUNTIME_SERVER_API_RESPONSE_FORMAT_B64_JSON=$SERVER_API_RESPONSE_FORMAT_B64_JSON
+    RUNTIME_SERVER_API_TIMEOUT_SECONDS=$SERVER_API_TIMEOUT_SECONDS
+fi
+
 export DEFAULT_API_URL
 export API_PROXY_URL
+export ENABLE_API_PROXY
+export LOCK_API_PROXY
 export DOCKER_LEGACY_API_URL_USED
+export SERVER_API_CONFIG_ENABLED
+export API_PROXY_AUTHORIZATION
+export SERVER_API_ALLOWED_PATHS
+export API_PROXY_CONNECT_TIMEOUT_SECONDS
+export API_PROXY_TIMEOUT_SECONDS
+export API_PROXY_SSL_SERVER_NAME
+export API_PROXY_SSL_VERIFY
+export API_PROXY_ERROR_LOG_PATH
+export API_PROXY_ERROR_LOG_LEVEL
+export RUNTIME_SERVER_API_ENABLED
+export RUNTIME_SERVER_API_MODEL
+export RUNTIME_SERVER_API_MODE
+export RUNTIME_SERVER_API_CODEX_CLI
+export RUNTIME_SERVER_API_RESPONSE_FORMAT_B64_JSON
+export RUNTIME_SERVER_API_TIMEOUT_SECONDS

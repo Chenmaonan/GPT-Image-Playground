@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   createDefaultFalProfile,
   createDefaultOpenAIProfile,
@@ -7,8 +7,17 @@ import {
   normalizeSettings,
 } from './apiProfiles'
 import { buildSettingsFromUrlParams, clearUrlSettingParams, hasUrlSettingParams } from './urlSettings'
+import { initializeRuntimeConfig } from './serverApiConfig'
 
 describe('URL settings params', () => {
+  beforeEach(() => {
+    initializeRuntimeConfig({ version: 1, serverApi: { enabled: false } })
+  })
+
+  afterEach(() => {
+    initializeRuntimeConfig({ version: 1, serverApi: { enabled: false } })
+  })
+
   it('creates and activates a new OpenAI profile for legacy URL params', () => {
     const current = normalizeSettings(DEFAULT_SETTINGS)
     const next = normalizeSettings({
@@ -91,6 +100,33 @@ describe('URL settings params', () => {
     clearUrlSettingParams(params)
 
     expect(params.toString()).toBe('foo=bar')
+  })
+
+  it('ignores all API URL settings in managed mode', () => {
+    initializeRuntimeConfig({
+      version: 1,
+      serverApi: {
+        enabled: true,
+        provider: 'openai',
+        model: 'server-model',
+        apiMode: 'images',
+        codexCli: false,
+        responseFormatB64Json: false,
+        timeoutSeconds: 600,
+        proxyPath: '/api-proxy',
+      },
+    })
+    const params = new URLSearchParams('apiUrl=https://evil.example/v1&apiKey=bad&apiMode=responses&model=other&codexCli=true')
+
+    expect(buildSettingsFromUrlParams(DEFAULT_SETTINGS, params)).toEqual({})
+    expect(hasUrlSettingParams(params)).toBe(true)
+  })
+
+  it('ignores URL API settings when runtime configuration failed to load', () => {
+    initializeRuntimeConfig(null)
+    const params = new URLSearchParams('apiUrl=https://evil.example/v1&apiKey=bad')
+
+    expect(buildSettingsFromUrlParams(DEFAULT_SETTINGS, params)).toEqual({})
   })
 
   it('imports settings with custom providers from URL params', () => {

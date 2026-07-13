@@ -1,10 +1,16 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_PARAMS } from '../types'
 import { DEFAULT_SETTINGS } from './apiProfiles'
 import { callImageApi } from './api'
+import { initializeRuntimeConfig } from './serverApiConfig'
 
 describe('callImageApi', () => {
+  beforeEach(() => {
+    initializeRuntimeConfig({ version: 1, serverApi: { enabled: false } })
+  })
+
   afterEach(() => {
+    initializeRuntimeConfig({ version: 1, serverApi: { enabled: false } })
     vi.restoreAllMocks()
     vi.unstubAllEnvs()
     vi.useRealTimers()
@@ -152,6 +158,90 @@ describe('callImageApi', () => {
       '/api-proxy/images/generations',
       expect.objectContaining({ method: 'POST' }),
     )
+  })
+
+  it('forces the managed proxy path and model over client settings', async () => {
+    initializeRuntimeConfig({
+      version: 1,
+      serverApi: {
+        enabled: true,
+        provider: 'openai',
+        model: 'server-model',
+        apiMode: 'images',
+        codexCli: false,
+        responseFormatB64Json: false,
+        timeoutSeconds: 600,
+        proxyPath: '/managed-api',
+      },
+    })
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      data: [{ b64_json: 'aW1hZ2U=' }],
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+
+    await callImageApi({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        baseUrl: 'https://evil.example/v1',
+        apiKey: 'client-key',
+        model: 'client-model',
+      },
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS },
+      inputImageDataUrls: [],
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/managed-api/images/generations',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    const [, init] = fetchMock.mock.calls[0]
+    expect(JSON.parse(String((init as RequestInit).body))).toMatchObject({ model: 'server-model' })
+  })
+
+  it('omits the provider Authorization header in managed mode', async () => {
+    initializeRuntimeConfig({
+      version: 1,
+      serverApi: {
+        enabled: true,
+        provider: 'openai',
+        model: 'server-model',
+        apiMode: 'images',
+        codexCli: false,
+        responseFormatB64Json: false,
+        timeoutSeconds: 600,
+        proxyPath: '/api-proxy',
+      },
+    })
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      data: [{ b64_json: 'aW1hZ2U=' }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+
+    await callImageApi({
+      settings: { ...DEFAULT_SETTINGS, apiKey: 'client-key' },
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS },
+      inputImageDataUrls: [],
+    })
+
+    const [, init] = fetchMock.mock.calls[0]
+    expect(new Headers((init as RequestInit).headers).has('Authorization')).toBe(false)
+  })
+
+  it('fails closed when runtime configuration is unavailable', async () => {
+    initializeRuntimeConfig(null)
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+
+    await expect(callImageApi({
+      settings: { ...DEFAULT_SETTINGS, apiKey: 'client-key' },
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS },
+      inputImageDataUrls: [],
+    })).rejects.toThrow('服务端 API 配置不可用')
+
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('does not add cache request headers that require extra CORS allow-list entries', async () => {

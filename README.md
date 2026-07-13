@@ -149,49 +149,76 @@ $env:VITE_DEFAULT_API_URL="https://api.openai.com/v1"; npm run deploy:cf
 <details>
 <summary><strong>🐳 方式三：Docker 部署</strong></summary>
 
-Docker 部署支持在运行时注入默认配置。你可以使用本仓库的工作流发布镜像，或在本地构建镜像。
+Docker 部署支持在容器启动时注入配置，并提供两种互斥模式：默认关闭的兼容模式，以及由服务端锁定 OpenAI 兼容配置的统一模式。你可以使用本仓库工作流发布的镜像，或在本地构建镜像。
 
-**环境变量说明：**
+**兼容模式变量（`SERVER_API_CONFIG_ENABLED=false`，默认）：**
 
-- `DEFAULT_API_URL`：设置页面上默认显示的 API 地址。
-- `API_PROXY_URL`：配置内置代理实际转发到的目标 API 地址（仅开启代理时有效）。
-- `ENABLE_API_PROXY`：设为 `true` 开启容器内置 Nginx 同源代理，用于解决浏览器跨域（CORS）限制。开启后，前端 **API 代理** 开关默认开启，浏览器会请求同源的 `/api-proxy/`，再由 Nginx 转发至 `API_PROXY_URL`；用户仍可在设置中手动关闭。
-- `LOCK_API_PROXY`：设为 `true` 时，在 `ENABLE_API_PROXY=true` 的前提下将前端 **API 代理** 开关强制锁定为开启，用户无法关闭。
-- `HOST` / `PORT`：指定容器内 Nginx 监听的地址和端口（默认 `0.0.0.0:80`）。
+- `DEFAULT_API_URL`：设置页面上默认显示的 API 地址，默认回退到 `API_URL`，再回退到 `https://api.openai.com/v1`。
+- `API_PROXY_URL`：内置代理实际转发到的目标 API 地址，默认回退规则同上。
+- `ENABLE_API_PROXY`：`true` 时开启容器内 Nginx 同源代理；默认 `false`。浏览器 Authorization 会原样转发给上游。
+- `LOCK_API_PROXY`：在 `ENABLE_API_PROXY=true` 时设为 `true`，会锁定前端代理开关；默认 `false`。
+- `API_URL`：旧版兼容变量，同时作为 `DEFAULT_API_URL` 和 `API_PROXY_URL` 的兜底值；建议逐步迁移到拆分后的变量。
+- `HOST` / `PORT`：容器内 Nginx 监听地址和端口，默认 `0.0.0.0:80`。
 
-> ⚠️ **安全警告**：开启 API 代理后，任何人都能将你的服务器作为代理来请求目标 API。建议仅在有访问控制（如 IP 白名单）或本地网络中开启。
+**服务端统一配置变量：**
 
-> 💡 **兼容迁移**：旧版本中的 `API_URL` 已拆分为 `DEFAULT_API_URL` 和 `API_PROXY_URL`。容器启动时会自动将遗留的 `API_URL` 作为两个新变量的兜底值，实现无缝兼容。建议更新配置文件，逐步迁移至新变量。
+- `SERVER_API_CONFIG_ENABLED`：统一配置总开关，严格使用小写 `true` 或 `false`，默认 `false`。
+- `SERVER_API_UPSTREAM_URL`：真实上游地址，默认空；开启时必填，只接受安全的 `http://` 或 `https://` URL，不接受 userinfo、query 或 fragment。
+- `SERVER_API_KEY`：上游 API Key，默认空；开启时必填。填写原始 Key，不要添加 `Bearer ` 前缀。允许字母、数字及 `._~+/=-`，最大 4096 字符。
+- `SERVER_API_MODEL`：统一使用的模型，默认 `gpt-image-2`；必须以字母或数字开头，其余字符仅允许字母、数字及 `._~:/+@=-`，最大 256 字符。
+- `SERVER_API_MODE`：`images` 或 `responses`，默认 `images`。Nginx 会据此只放行对应的 Images API 或 Responses API 路径。
+- `SERVER_API_CODEX_CLI`：是否启用 Codex CLI 兼容参数，严格使用小写布尔值，默认 `false`。
+- `SERVER_API_RESPONSE_FORMAT_B64_JSON`：是否请求 Base64 JSON 图片结果，严格使用小写布尔值，默认 `false`。
+- `SERVER_API_TIMEOUT_SECONDS`：请求超时秒数，必须是 `10..600` 的十进制整数，默认 `600`。
 
-**1. Docker CLI 示例**
+统一模式首版仅支持 OpenAI 兼容接口，不支持 fal.ai 或自定义 Provider。开启后，服务端会强制启用并锁定 `/api-proxy`，将代理目标固定为 `SERVER_API_UPSTREAM_URL`，并用 `SERVER_API_KEY` 生成的 Authorization 覆盖任何客户端请求头；`API_PROXY_URL`、`ENABLE_API_PROXY` 和 `LOCK_API_PROXY` 不再决定实际代理行为。
+
+统一模式访问 HTTPS upstream 时会启用 SNI，并使用镜像内系统 CA 校验证书链与主机名；证书无效、过期、自签名或主机名不匹配时请求会失败。若使用 HTTP，Bearer Key 和请求内容不会被加密，只能用于受信任内网、VPN 或其他隔离网络，禁止经过不可信公网链路。
+
+为避免连接失败时在容器日志中回显 upstream 主机、IP、路径或其他部署细节，统一模式会抑制代理 location 的底层运行时错误日志；客户端仍会收到对应 HTTP 错误状态。兼容模式继续将代理错误写入 stderr，便于沿用原有排查方式。
+
+客户端保存的 Profiles、API URL/Key、URL 参数、配置导入和历史任务中的 API 配置均不能覆盖统一配置。浏览器只能读取不含 Key 和上游 URL 的 `/runtime-config.json`；配置非法时容器启动会非零退出，运行时配置加载或校验失败时前端禁止提交，不会回退到客户端配置。
+
+> ⚠️ **付费代理风险**：统一模式会暴露一个可消耗服务端额度的同源代理入口，项目本身不提供登录、租户隔离或完整限流。公网部署必须在外层增加认证、VPN、IP 白名单、网关限流等访问控制；仅隐藏 API Key 不能防止额度被滥用。
+
+> 静态托管无法安全保存服务端 Key，也无法实现覆盖 Authorization 的反向代理，因此纯静态 Vercel、GitHub Pages、Netlify 等部署不能直接启用此模式。需要使用本 Docker/Nginx 实现，或自行实现等价的 `/runtime-config.json` 与 `/api-proxy/` 服务端协议。
+
+**1. 服务端统一配置：Docker CLI 示例**
 
 ```bash
 docker run -d -p 8080:80 \
-  -e DEFAULT_API_URL=https://api.openai.com/v1 \
-  -e ENABLE_API_PROXY=true \
-  -e LOCK_API_PROXY=true \
-  -e API_PROXY_URL=https://api.openai.com/v1 \
+  -e SERVER_API_CONFIG_ENABLED=true \
+  -e SERVER_API_UPSTREAM_URL=https://api.openai.com/v1 \
+  -e SERVER_API_KEY=sk-your-server-key \
+  -e SERVER_API_MODEL=gpt-image-2 \
+  -e SERVER_API_MODE=images \
+  -e SERVER_API_CODEX_CLI=false \
+  -e SERVER_API_RESPONSE_FORMAT_B64_JSON=false \
+  -e SERVER_API_TIMEOUT_SECONDS=600 \
   ghcr.io/<owner>/<repo>:latest
 ```
 
-*(注：使用 host 网络时加 `--network host`，修改容器监听端口使用 `-e PORT=28080`)*
-
-**2. Docker Compose 示例**
+**2. 服务端统一配置：Docker Compose 示例**
 
 ```yaml
 services:
   gpt-image-playground:
     image: ghcr.io/<owner>/<repo>:latest
     environment:
-      - DEFAULT_API_URL=https://api.openai.com/v1
+      SERVER_API_CONFIG_ENABLED: "true"
+      SERVER_API_UPSTREAM_URL: "https://api.openai.com/v1"
+      SERVER_API_KEY: "${OPENAI_API_KEY}"
+      SERVER_API_MODEL: "gpt-image-2"
+      SERVER_API_MODE: "images"
+      SERVER_API_CODEX_CLI: "false"
+      SERVER_API_RESPONSE_FORMAT_B64_JSON: "false"
+      SERVER_API_TIMEOUT_SECONDS: "600"
     ports:
       - "8080:80"
     restart: unless-stopped
 ```
 
-**更新说明：**
-
-使用 `latest` 标签时，重新拉取镜像并重启即可更新（如 `docker compose pull && docker compose up -d`）。若需固定版本可使用你发布的版本号标签。
+回滚时将 `SERVER_API_CONFIG_ENABLED=false` 并重启容器，即可恢复原有 `DEFAULT_API_URL` / `API_PROXY_URL` / `ENABLE_API_PROXY` / `LOCK_API_PROXY` 行为。使用 `latest` 标签时，重新拉取镜像并重启即可更新（如 `docker compose pull && docker compose up -d`）；生产环境建议固定版本标签。
 
 </details>
 

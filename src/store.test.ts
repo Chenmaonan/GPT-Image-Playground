@@ -1,8 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_PARAMS } from './types'
 import { createDefaultFalProfile, createDefaultOpenAIProfile, DEFAULT_SETTINGS, normalizeSettings } from './lib/apiProfiles'
 import type { StoredImage, StoredImageThumbnail, TaskRecord } from './types'
 import { getSelectedImageMentionLabel } from './lib/promptImageMentions'
+import { getEffectiveApiProfile, initializeRuntimeConfig, loadRuntimeConfig } from './lib/serverApiConfig'
+import * as falAiImageApi from './lib/falAiImageApi'
 vi.mock('./lib/db', () => {
   const tasks = new Map<string, TaskRecord>()
   const images = new Map<string, StoredImage>()
@@ -50,11 +52,21 @@ vi.mock('./lib/db', () => {
     },
   }
 })
-import { clearImages, putImage } from './lib/db'
-import { editOutputs, getPersistedState, getTaskApiProfile, markInterruptedOpenAIRunningTasks, reuseConfig, submitTask, useStore } from './store'
+import { clearImages, clearTasks, getAllTasks, putImage, putTask } from './lib/db'
+import { editOutputs, getCodexCliPromptKey, getPersistedState, getTaskApiProfile, initStore, markInterruptedOpenAIRunningTasks, reuseConfig, submitTask, useStore } from './store'
 
 const imageA = { id: 'image-a', dataUrl: 'data:image/png;base64,a' }
 const imageB = { id: 'image-b', dataUrl: 'data:image/png;base64,b' }
+
+afterEach(() => {
+  initializeRuntimeConfig({ version: 1, serverApi: { enabled: false } })
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
+
+beforeEach(() => {
+  initializeRuntimeConfig({ version: 1, serverApi: { enabled: false } })
+})
 
 function task(overrides: Partial<TaskRecord> = {}): TaskRecord {
   return {
@@ -171,6 +183,244 @@ describe('interrupted OpenAI running tasks', () => {
     expect(result.tasks.find((item) => item.id === 'fal-running')).toEqual(falRunning)
     expect(result.tasks.find((item) => item.id === 'custom-running')).toEqual(customAsyncRunning)
     expect(result.tasks.find((item) => item.id === 'done-task')).toEqual(doneTask)
+  })
+
+  it('marks incompatible recoverable tasks as interrupted in managed mode', () => {
+    initializeRuntimeConfig({
+      version: 1,
+      serverApi: {
+        enabled: true,
+        provider: 'openai',
+        model: 'server-model',
+        apiMode: 'images',
+        codexCli: false,
+        responseFormatB64Json: false,
+        timeoutSeconds: 600,
+        proxyPath: '/api-proxy',
+      },
+    })
+    const now = 10_000
+    const falRunning = task({ id: 'fal-running', apiProvider: 'fal', status: 'running', createdAt: 3_000, finishedAt: null, elapsed: null })
+    const customRecoverable = task({
+      id: 'custom-recoverable',
+      apiProvider: 'custom-provider',
+      customTaskId: 'task-1',
+      status: 'error',
+      customRecoverable: true,
+      createdAt: 4_000,
+      finishedAt: null,
+      elapsed: null,
+    })
+
+    const result = markInterruptedOpenAIRunningTasks([falRunning, customRecoverable], now)
+
+    expect(result.interruptedTasks.map((item) => item.id)).toEqual(['fal-running', 'custom-recoverable'])
+    expect(result.tasks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'fal-running', status: 'error', falRecoverable: false }),
+      expect.objectContaining({ id: 'custom-recoverable', status: 'error', customRecoverable: false }),
+    ]))
+  })
+})
+
+describe('persisted API task recovery', () => {
+  const falProfile = createDefaultFalProfile({
+    id: 'recovery-fal-profile',
+    name: 'fal recovery',
+    apiKey: 'local-fal-secret',
+  })
+  const customProfile = createDefaultOpenAIProfile({
+    id: 'recovery-custom-profile',
+    name: 'custom recovery',
+    provider: 'custom-recovery',
+    baseUrl: 'https://custom.example/v1',
+    apiKey: 'local-custom-secret',
+    model: 'custom-model',
+  })
+  const customProvider = {
+    id: 'custom-recovery',
+    name: 'Custom Recovery',
+    template: 'http-image' as const,
+    submit: {
+      path: 'images/generations',
+      method: 'POST' as const,
+      contentType: 'json' as const,
+      body: { model: '$profile.model', prompt: '$prompt' },
+      taskIdPath: 'task_id',
+    },
+    poll: {
+      path: 'images/tasks/{task_id}',
+      method: 'GET' as const,
+      intervalSeconds: 1,
+      statusPath: 'status',
+      successValues: ['SUCCESS'],
+      failureValues: ['FAILURE'],
+      result: {
+        b64JsonPaths: ['data.*.b64_json'],
+      },
+    },
+  }
+
+  function createPersistedRecoveryTasks(): TaskRecord[] {
+    return [
+      task({
+        id: 'fal-running-recovery',
+        apiProvider: 'fal',
+        apiProfileId: falProfile.id,
+        falRequestId: 'fal-running-request',
+        falEndpoint: 'fal-ai/flux/dev',
+        status: 'running',
+        finishedAt: null,
+        elapsed: null,
+      }),
+      task({
+        id: 'fal-recoverable-error',
+        apiProvider: 'fal',
+        apiProfileId: falProfile.id,
+        falRequestId: 'fal-recoverable-request',
+        falEndpoint: 'fal-ai/flux/dev',
+        status: 'error',
+        falRecoverable: true,
+      }),
+      task({
+        id: 'custom-running-recovery',
+        apiProvider: customProvider.id,
+        apiProfileId: customProfile.id,
+        customTaskId: 'custom-running-task',
+        status: 'running',
+        finishedAt: null,
+        elapsed: null,
+      }),
+      task({
+        id: 'custom-recoverable-error',
+        apiProvider: customProvider.id,
+        apiProfileId: customProfile.id,
+        customTaskId: 'custom-recoverable-task',
+        status: 'error',
+        customRecoverable: true,
+      }),
+    ]
+  }
+
+  function expectRecoveryTasksTerminated(tasks: TaskRecord[]) {
+    expect(tasks.map((item) => item.id)).toEqual([
+      'fal-running-recovery',
+      'fal-recoverable-error',
+      'custom-running-recovery',
+      'custom-recoverable-error',
+    ])
+    for (const recoveredTask of tasks) {
+      expect(recoveredTask).toMatchObject({
+        status: 'error',
+        falRecoverable: false,
+        customRecoverable: false,
+      })
+      expect(recoveredTask.error).toContain('服务端 API 配置不可用')
+    }
+  }
+
+  function createSuccessfulCustomPollResponse() {
+    return new Response(JSON.stringify({
+      status: 'SUCCESS',
+      data: [{ b64_json: 'aW1hZ2U=' }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }
+
+  beforeEach(async () => {
+    vi.useFakeTimers()
+    await clearTasks()
+    useStore.setState({
+      settings: normalizeSettings({
+        ...DEFAULT_SETTINGS,
+        customProviders: [customProvider],
+        profiles: [falProfile, customProfile],
+        activeProfileId: falProfile.id,
+      }),
+      tasks: [],
+      inputImages: [],
+      showToast: vi.fn(),
+    })
+  })
+
+  afterEach(async () => {
+    await clearTasks()
+  })
+
+  it.each(['error', 'loading'] as const)(
+    'does not schedule or recover persisted fal/custom tasks while runtime config is %s',
+    async (runtimeStatus) => {
+      const falRecoverySpy = vi.spyOn(falAiImageApi, 'getFalQueuedImageResult').mockResolvedValue({
+        images: ['data:image/png;base64,aW1hZ2U='],
+      })
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => createSuccessfulCustomPollResponse())
+      let resolveRuntimeResponse: (response: Response) => void = () => undefined
+      let loadPromise: Promise<void> | null = null
+
+      if (runtimeStatus === 'loading') {
+        const runtimeResponsePromise = new Promise<Response>((resolve) => {
+          resolveRuntimeResponse = resolve
+        })
+        fetchMock.mockImplementationOnce(() => runtimeResponsePromise)
+        loadPromise = loadRuntimeConfig()
+        fetchMock.mockClear()
+      } else {
+        initializeRuntimeConfig(null)
+      }
+
+      await Promise.all(createPersistedRecoveryTasks().map((item) => putTask(item)))
+
+      try {
+        await initStore()
+        const scheduledTimerCount = vi.getTimerCount()
+        await vi.advanceTimersByTimeAsync(0)
+
+        expect(scheduledTimerCount).toBe(0)
+        expect(falRecoverySpy).not.toHaveBeenCalled()
+        expect(fetchMock).not.toHaveBeenCalled()
+        expectRecoveryTasksTerminated(useStore.getState().tasks)
+        expectRecoveryTasksTerminated(await getAllTasks())
+      } finally {
+        if (loadPromise) {
+          resolveRuntimeResponse(new Response(JSON.stringify({ version: 1, serverApi: { enabled: false } }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }))
+          await loadPromise
+        }
+      }
+    },
+  )
+
+  it('stops scheduled recovery when runtime config becomes unavailable before the timer runs', async () => {
+    const falRecoverySpy = vi.spyOn(falAiImageApi, 'getFalQueuedImageResult').mockResolvedValue({
+      images: ['data:image/png;base64,aW1hZ2U='],
+    })
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => createSuccessfulCustomPollResponse())
+    await Promise.all(createPersistedRecoveryTasks().map((item) => putTask(item)))
+
+    await initStore()
+    expect(vi.getTimerCount()).toBe(4)
+
+    initializeRuntimeConfig(null)
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(falRecoverySpy).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expectRecoveryTasksTerminated(useStore.getState().tasks)
+    expectRecoveryTasksTerminated(await getAllTasks())
+  })
+
+  it('preserves legacy fal/custom recovery while runtime config is ready and disabled', async () => {
+    const falRecoverySpy = vi.spyOn(falAiImageApi, 'getFalQueuedImageResult').mockResolvedValue({
+      images: ['data:image/png;base64,aW1hZ2U='],
+    })
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => createSuccessfulCustomPollResponse())
+    await Promise.all(createPersistedRecoveryTasks().map((item) => putTask(item)))
+
+    await initStore()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(falRecoverySpy).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 })
 
@@ -326,5 +576,133 @@ describe('reused task API profile', () => {
       cancelText: '放弃提交',
     }))
     expect(state.showSettings).toBe(false)
+  })
+})
+
+describe('server-managed API configuration', () => {
+  const managedConfig = {
+    version: 1 as const,
+    serverApi: {
+      enabled: true as const,
+      provider: 'openai' as const,
+      model: 'server-model',
+      apiMode: 'images' as const,
+      codexCli: false,
+      responseFormatB64Json: false,
+      timeoutSeconds: 600,
+      proxyPath: '/api-proxy',
+    },
+  }
+  const clientProfile = createDefaultOpenAIProfile({
+    id: 'client-profile',
+    apiKey: 'original-key',
+    model: 'client-model',
+  })
+  const falProfile = createDefaultFalProfile({ id: 'fal-profile', name: 'fal 配置', apiKey: 'fal-key' })
+
+  beforeEach(() => {
+    initializeRuntimeConfig(managedConfig)
+    useStore.setState({
+      settings: normalizeSettings({
+        ...DEFAULT_SETTINGS,
+        profiles: [clientProfile, falProfile],
+        activeProfileId: clientProfile.id,
+        reuseTaskApiProfileTemporarily: true,
+      }),
+      prompt: '',
+      inputImages: [],
+      maskDraft: null,
+      params: { ...DEFAULT_PARAMS },
+      tasks: [],
+      showSettings: false,
+      toast: null,
+      reusedTaskApiProfileId: null,
+      reusedTaskApiProfileName: null,
+      reusedTaskApiProfileMissing: false,
+      showToast: vi.fn(),
+      setConfirmDialog: vi.fn(),
+    })
+  })
+
+  it('ignores API settings patches while preserving general preferences', () => {
+    useStore.getState().setSettings({
+      apiKey: 'attacker-key',
+      model: 'attacker-model',
+      activeProfileId: falProfile.id,
+      clearInputAfterSubmit: true,
+    })
+
+    const settings = useStore.getState().settings
+    expect(settings.profiles.find((profile) => profile.id === clientProfile.id)).toMatchObject({
+      apiKey: 'original-key',
+      model: 'client-model',
+    })
+    expect(settings.activeProfileId).toBe(clientProfile.id)
+    expect(settings.clearInputAfterSubmit).toBe(true)
+    expect(settings.reuseTaskApiProfileTemporarily).toBe(false)
+  })
+
+  it('resolves every task to the managed profile', () => {
+    const resolved = getTaskApiProfile(useStore.getState().settings, task({
+      apiProvider: 'fal',
+      apiProfileId: falProfile.id,
+    }))
+
+    expect(resolved).toEqual(getEffectiveApiProfile(useStore.getState().settings))
+    expect(resolved).toMatchObject({ id: 'server-managed-openai', provider: 'openai', model: 'server-model' })
+  })
+
+  it('reuses only task input and parameters without selecting its API profile', async () => {
+    await reuseConfig(task({
+      apiProvider: 'fal',
+      apiProfileId: falProfile.id,
+      params: { ...DEFAULT_PARAMS, n: 8, size: 'auto', quality: 'auto' },
+    }))
+
+    const state = useStore.getState()
+    expect(state.reusedTaskApiProfileId).toBeNull()
+    expect(state.reusedTaskApiProfileMissing).toBe(false)
+    expect(state.params).toMatchObject({ n: 8, size: 'auto', quality: 'auto' })
+    expect(state.showToast).toHaveBeenCalledWith('已复用输入与参数', 'success')
+  })
+
+  it('submits with an empty client key and records managed task metadata', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      data: [{ b64_json: 'aW1hZ2U=' }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    useStore.setState({ prompt: 'prompt' })
+
+    await submitTask()
+
+    const created = useStore.getState().tasks[0]
+    expect(created).toMatchObject({
+      apiProvider: 'openai',
+      apiProfileId: 'server-managed-openai',
+      apiProfileName: '服务端统一配置',
+      apiModel: 'server-model',
+    })
+    expect(useStore.getState().showSettings).toBe(false)
+  })
+
+  it('keeps input reuse available without reusing an API profile when runtime config is unavailable', async () => {
+    initializeRuntimeConfig(null)
+
+    await reuseConfig(task({
+      apiProvider: 'fal',
+      apiProfileId: falProfile.id,
+      params: { ...DEFAULT_PARAMS, n: 8, size: 'auto', quality: 'auto' },
+    }))
+
+    const state = useStore.getState()
+    expect(state.reusedTaskApiProfileId).toBeNull()
+    expect(state.reusedTaskApiProfileMissing).toBe(false)
+    expect(state.params).toMatchObject({ n: 8, size: 'auto', quality: 'auto' })
+    expect(state.showToast).toHaveBeenCalledWith('已复用输入与参数', 'success')
+  })
+
+  it('uses a non-secret Codex prompt key when runtime config is unavailable', () => {
+    initializeRuntimeConfig(null)
+
+    expect(getCodexCliPromptKey(useStore.getState().settings)).toBe('runtime-config-unavailable')
   })
 })
