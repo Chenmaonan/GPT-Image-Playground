@@ -2,9 +2,7 @@
 
 # 🎨 GPT Image Playground
 
-[![GitHub Repo stars](https://img.shields.io/github/stars/CookSleep/gpt_image_playground?style=flat-square&color=eab308)](https://github.com/CookSleep/gpt_image_playground/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/CookSleep/gpt_image_playground?style=flat-square&color=3b82f6)](https://github.com/CookSleep/gpt_image_playground/network/members)
-[![License](https://img.shields.io/badge/license-MIT-10b981?style=flat-square)](https://github.com/CookSleep/gpt_image_playground/blob/main/LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-10b981?style=flat-square)](LICENSE)
 [![React](https://img.shields.io/badge/React-19-20232A?style=flat-square&logo=react&logoColor=61DAFB)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 
@@ -13,17 +11,11 @@
 提供简洁精美的 Web UI，支持 OpenAI / OpenAI 兼容接口、fal.ai 与可导入的自定义 HTTP 服务商。<br>
 支持文本生图、参考图与遮罩编辑，数据纯本地化存储，带来流畅的历史记录与参数管理体验。
 
-<br>
-
-[![Vercel 在线体验](https://img.shields.io/badge/Vercel-%E5%9C%A8%E7%BA%BF%E4%BD%93%E9%AA%8C-black?style=for-the-badge&logo=vercel&logoColor=white)](https://gpt-image-playground.cooksleep.dev)
-&nbsp;&nbsp;&nbsp;
-[![GitHub Pages 在线体验](https://img.shields.io/badge/GitHub%20Pages-%E5%9C%A8%E7%BA%BF%E4%BD%93%E9%AA%8C-222222?style=for-the-badge&logo=github&logoColor=white)](https://cooksleep.github.io/gpt_image_playground)
-
 </div>
 
 <br>
 
-> 💡 **提示**：若需调用非 HTTPS 的内网或本地 HTTP API，请使用 GitHub Pages 版本或自行部署，Vercel 部署的体验版绑定的 `.dev` 域名因安全策略通常要求接口必须为 HTTPS。
+> 💡 **提示**：若需调用非 HTTPS 的内网或本地 HTTP API，请自行部署到允许该访问策略的环境。
 
 ---
 
@@ -104,9 +96,7 @@
 <details>
 <summary><strong>▲ 方式一：Vercel 一键部署 (推荐)</strong></summary>
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FCookSleep%2Fgpt_image_playground&project-name=gpt-image-playground&repository-name=gpt-image-playground)
-
-点击上方按钮导入仓库即可，Vercel 会自动执行构建并部署静态文件。
+将本仓库导入 Vercel 后，Vercel 会自动执行构建并部署静态文件。
 
 **配置默认 API URL**：在 Vercel 项目的 **Settings → Environment Variables** 中添加 `VITE_DEFAULT_API_URL`（如 `https://api.openai.com/v1`），然后重新部署即可生效。
 
@@ -114,12 +104,12 @@
 
 **配置自动更新**：
 
-本项目已在 `vercel.json` 中关闭了默认的自动部署。若需在同步 GitHub 上游代码后自动更新 Vercel 部署：
+本项目已在 `vercel.json` 中关闭了默认的自动部署。若需在推送代码或发布版本后自动更新 Vercel 部署：
 
 1. 在 Vercel 项目设置 **Settings -> Git** 的 **Deploy Hooks** 中创建一个名为 `Release` 的 Hook（Branch 填 `main`）并复制生成的 URL。
 2. 在你 Fork 的 GitHub 仓库设置 **Settings -> Secrets and variables -> Actions** 中，新建 Secret `VERCEL_DEPLOY_HOOK`，填入刚才的 URL。
 
-此后，每次在 GitHub 点击 **Sync fork** 同步上游，都会自动触发 Vercel 构建部署最新版。
+此后，每次触发对应 GitHub Actions 工作流，都会自动触发 Vercel 构建部署最新版。
 
 </details>
 
@@ -159,7 +149,7 @@ $env:VITE_DEFAULT_API_URL="https://api.openai.com/v1"; npm run deploy:cf
 <details>
 <summary><strong>🐳 方式三：Docker 部署</strong></summary>
 
-官方镜像已发布至 GitHub Container Registry。Docker 部署支持在运行时注入默认配置。
+Docker 部署支持在运行时注入默认配置。你可以使用本仓库的工作流发布镜像，或在本地构建镜像。
 
 **环境变量说明：**
 
@@ -181,7 +171,7 @@ docker run -d -p 8080:80 \
   -e ENABLE_API_PROXY=true \
   -e LOCK_API_PROXY=true \
   -e API_PROXY_URL=https://api.openai.com/v1 \
-  ghcr.io/cooksleep/gpt_image_playground:latest
+  ghcr.io/<owner>/<repo>:latest
 ```
 
 *(注：使用 host 网络时加 `--network host`，修改容器监听端口使用 `-e PORT=28080`)*
@@ -191,7 +181,7 @@ docker run -d -p 8080:80 \
 ```yaml
 services:
   gpt-image-playground:
-    image: ghcr.io/cooksleep/gpt_image_playground:latest
+    image: ghcr.io/<owner>/<repo>:latest
     environment:
       - DEFAULT_API_URL=https://api.openai.com/v1
     ports:
@@ -201,7 +191,7 @@ services:
 
 **更新说明：**
 
-使用 `latest` 标签时，重新拉取镜像并重启即可更新（如 `docker compose pull && docker compose up -d`）。若需固定版本可使用官方提供的版本号标签（如 `0.2.x`）。
+使用 `latest` 标签时，重新拉取镜像并重启即可更新（如 `docker compose pull && docker compose up -d`）。若需固定版本可使用你发布的版本号标签。
 
 </details>
 
@@ -264,11 +254,11 @@ npm run build
 例如，集成到 New API 的聊天系统：
 
 ```text
-https://gpt-image-playground.cooksleep.dev?apiUrl={address}&apiKey={key}&model={model}
+https://your-domain.example?apiUrl={address}&apiKey={key}&model={model}
 ```
 
 ```text
-https://cooksleep.github.io/gpt_image_playground?apiUrl={address}&apiKey={key}&model={model}
+https://your-pages-domain.example?apiUrl={address}&apiKey={key}&model={model}
 ```
 
 **方式二：自定义格式服务商**
@@ -357,33 +347,3 @@ JSON 结构示例：
 本项目基于 [MIT License](LICENSE) 开源。
 
 特别致谢：[LINUX DO](https://linux.do)
-
-## 💜 赞助支持
-
-<div align="center">
-
-如果这个项目对你有帮助，欢迎通过爱发电赞助支持，你的每一份鼓励都是持续更新的动力！
-
-<br>
-<br>
-
-<a href="https://www.ifdian.net/a/cooksleep">
-  <img src="https://img.shields.io/badge/%E7%88%B1%E5%8F%91%E7%94%B5-%E8%B5%9E%E5%8A%A9%E4%BD%9C%E8%80%85-946ce6?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0xMiAyMS4zNWwtMS40NS0xLjMyQzUuNCAxNS4zNiAyIDEyLjI4IDIgOC41IDIgNS40MiA0LjQyIDMgNy41IDNjMS43NCAwIDMuNDEuODEgNC41IDIuMDlDMTMuMDkgMy44MSAxNC43NiAzIDE2LjUgMyAxOS41OCAzIDIyIDUuNDIgMjIgOC41YzAgMy43OC0zLjQgNi44Ni04LjU1IDExLjU0TDEyIDIxLjM1eiIvPjwvc3ZnPg==&logoColor=white" alt="爱发电赞助" />
-</a>
-
-<br>
-<br>
-
-</div>
-
-## ⭐ Star History
-
-<div align="center">
-  <a href="https://www.star-history.com/#CookSleep/gpt_image_playground&Date">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=CookSleep/gpt_image_playground&type=Date&theme=dark" />
-      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=CookSleep/gpt_image_playground&type=Date" />
-      <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=CookSleep/gpt_image_playground&type=Date" />
-    </picture>
-  </a>
-</div>
