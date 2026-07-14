@@ -218,6 +218,15 @@ services:
     restart: unless-stopped
 ```
 
+**3. Dokploy 部署**
+
+在 Dokploy 中创建 Compose 应用并连接本仓库：
+
+1. Compose Path 填 `./docker-compose.yml`。
+2. 在 Domains 中添加域名，Service 选择 `gpt-image-playground`，Container Port 填 `80`。
+3. 如需服务端统一配置，在 Environment 中填入 `.env.example` 对应变量，并将 `SERVER_API_CONFIG_ENABLED` 设为 `true`。
+4. `SERVER_API_KEY` 只能放在 Dokploy Environment 中，不要写入仓库文件。
+
 回滚时将 `SERVER_API_CONFIG_ENABLED=false` 并重启容器，即可恢复原有 `DEFAULT_API_URL` / `API_PROXY_URL` / `ENABLE_API_PROXY` / `LOCK_API_PROXY` 行为。使用 `latest` 标签时，重新拉取镜像并重启即可更新（如 `docker compose pull && docker compose up -d`）；生产环境建议固定版本标签。
 
 </details>

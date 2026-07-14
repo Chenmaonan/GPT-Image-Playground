@@ -1,0 +1,28 @@
+services:
+  gpt-image-playground:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    image: gpt-image-playground:latest
+    restart: unless-stopped
+    environment:
+      DEFAULT_API_URL: ${DEFAULT_API_URL:-https://api.openai.com/v1}
+      API_PROXY_URL: ${API_PROXY_URL:-https://api.openai.com/v1}
+      ENABLE_API_PROXY: ${ENABLE_API_PROXY:-false}
+      LOCK_API_PROXY: ${LOCK_API_PROXY:-false}
+      SERVER_API_CONFIG_ENABLED: ${SERVER_API_CONFIG_ENABLED:-false}
+      SERVER_API_UPSTREAM_URL: ${SERVER_API_UPSTREAM_URL:-}
+      SERVER_API_KEY: ${SERVER_API_KEY:-}
+      SERVER_API_MODEL: ${SERVER_API_MODEL:-gpt-image-2}
+      SERVER_API_MODE: ${SERVER_API_MODE:-images}
+      SERVER_API_CODEX_CLI: ${SERVER_API_CODEX_CLI:-false}
+      SERVER_API_RESPONSE_FORMAT_B64_JSON: ${SERVER_API_RESPONSE_FORMAT_B64_JSON:-false}
+      SERVER_API_TIMEOUT_SECONDS: ${SERVER_API_TIMEOUT_SECONDS:-600}
+    expose:
+      - "80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/runtime-config.json >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
