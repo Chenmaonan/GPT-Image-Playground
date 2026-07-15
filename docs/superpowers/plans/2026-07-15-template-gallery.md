@@ -26,9 +26,9 @@
 - 新增：`src/data/templateSamples.test.ts`
 - 复制：`public/templates/task-004.webp`
 - 复制：`public/templates/task-013.webp`
-- 复制：`public/templates/task-005.webp`
-- 复制：`public/templates/task-006.webp`
-- 复制：`public/templates/task-007.webp`
+- 复制：`public/templates/task-001.webp`
+- 复制：`public/templates/task-025.webp`
+- 复制：`public/templates/task-038.webp`
 - 复制：`public/templates/task-024.webp`
 
 **来源：**
@@ -45,7 +45,7 @@ expect(TEMPLATE_SAMPLES).toHaveLength(6)
 expect(new Set(TEMPLATE_SAMPLES.map((sample) => sample.id)).size).toBe(6)
 expect(TEMPLATE_SAMPLES.every((sample) => sample.prompt.trim())).toBe(true)
 expect(TEMPLATE_SAMPLES.every((sample) => sample.imageSrc.startsWith(import.meta.env.BASE_URL))).toBe(true)
-expect(TEMPLATE_SAMPLES.filter((sample) => sample.requiresReference)).toHaveLength(5)
+expect(TEMPLATE_SAMPLES.filter((sample) => sample.requiresReference)).toHaveLength(4)
 ```
 
 - [ ] **步骤 2：运行定向测试并确认因模块缺失而失败**
@@ -182,7 +182,7 @@ export function applyTemplate(template: TemplateSample) {
 
 - [ ] **步骤 3：实现列表、响应式网格和输入聚焦**
 
-网格使用单列、`sm` 双列、宽屏三列。应用模板后用 `requestAnimationFrame` 查找 `[data-input-bar] [contenteditable="true"]`，调用 `focus()` 和 `scrollIntoView({ block: 'nearest' })`；找不到输入元素时静默跳过，不影响 Store 更新。
+网格使用 `auto-fit + minmax(min(100%, 24rem), 1fr)` 按容器宽度自动排布，避免 Agent 历史侧栏压缩卡片。应用模板后用 `requestAnimationFrame` 查找 `[data-input-bar] [contenteditable="true"]`，调用 `focus()` 和 `scrollIntoView({ block: 'nearest' })`；找不到输入元素时静默跳过，不影响 Store 更新。
 
 - [ ] **步骤 4：运行列表测试**
 
@@ -263,7 +263,7 @@ npm run build
 
 - `1440x900`、`1024x768`、`390x844`。
 - 浅色和深色模式。
-- 3/2/1 列布局、长 Prompt 截断、宽图裁切、图片加载失败占位。
+- `1440/1024/390px` 下的 `2/1/1` 列布局、长 Prompt 截断、宽图裁切、图片加载失败占位。
 - 最后一行卡片不被固定输入栏遮挡。
 - 点击“使用模板”后 Prompt 和尺寸写入，不产生历史任务或网络生成请求。
 - 控制台无 React 错误、图片 404 或布局溢出。

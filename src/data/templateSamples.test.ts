@@ -1,36 +1,36 @@
 import { describe, expect, it } from 'vitest'
+import task001Prompt from '../../image-sample-library/gpt-image-playground-20260715-excellent/task-001/prompt.txt?raw'
 import task004Prompt from '../../image-sample-library/gpt-image-playground-20260715-excellent/task-004/prompt.txt?raw'
-import task005Prompt from '../../image-sample-library/gpt-image-playground-20260715-excellent/task-005/prompt.txt?raw'
-import task006Prompt from '../../image-sample-library/gpt-image-playground-20260715-excellent/task-006/prompt.txt?raw'
-import task007Prompt from '../../image-sample-library/gpt-image-playground-20260715-excellent/task-007/prompt.txt?raw'
 import task013Prompt from '../../image-sample-library/gpt-image-playground-20260715-excellent/task-013/prompt.txt?raw'
 import task024Prompt from '../../image-sample-library/gpt-image-playground-20260715-excellent/task-024/prompt.txt?raw'
+import task025Prompt from '../../image-sample-library/gpt-image-playground-20260715-excellent/task-025/prompt.txt?raw'
+import task038Prompt from '../../image-sample-library/gpt-image-playground-20260715-excellent/task-038/prompt.txt?raw'
 import { TEMPLATE_SAMPLES } from './templateSamples'
 
 const expectedSourceIds = [
   'task-004',
   'task-013',
-  'task-005',
-  'task-006',
-  'task-007',
+  'task-001',
+  'task-025',
+  'task-038',
   'task-024',
 ]
 
 const expectedOutput = {
   'task-004': { ratio: '1:1', size: '1254x1254', requiresReference: false },
   'task-013': { ratio: '1:1', size: '1254x1254', requiresReference: true },
-  'task-005': { ratio: '1:1', size: '1254x1254', requiresReference: true },
-  'task-006': { ratio: '1:1', size: '1254x1254', requiresReference: true },
-  'task-007': { ratio: '1:1', size: '1254x1254', requiresReference: true },
+  'task-001': { ratio: '2:1', size: '1778x884', requiresReference: true },
+  'task-025': { ratio: '1:1', size: '1254x1254', requiresReference: true },
+  'task-038': { ratio: '1:1', size: '1254x1254', requiresReference: false },
   'task-024': { ratio: '2:1', size: '1774x887', requiresReference: true },
 } as const
 
 const expectedPrompts = {
   'task-004': task004Prompt,
   'task-013': task013Prompt,
-  'task-005': task005Prompt,
-  'task-006': task006Prompt,
-  'task-007': task007Prompt,
+  'task-001': task001Prompt,
+  'task-025': task025Prompt,
+  'task-038': task038Prompt,
   'task-024': task024Prompt,
 } as const
 
@@ -84,6 +84,6 @@ describe('template samples', () => {
       }).toEqual(expectedOutput[sample.sourceSampleId as keyof typeof expectedOutput])
     }
 
-    expect(TEMPLATE_SAMPLES.filter((sample) => sample.requiresReference)).toHaveLength(5)
+    expect(TEMPLATE_SAMPLES.filter((sample) => sample.requiresReference)).toHaveLength(4)
   })
 })
