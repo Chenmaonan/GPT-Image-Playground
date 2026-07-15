@@ -2,11 +2,11 @@
 
 ## 目标
 
-在 Agent 工作台主区域加入可直接浏览和复用的模板展示。模板从 `image-sample-library/gpt-image-playground-20260715-excellent` 中精选，卡片视觉沿用现有历史生成记录卡片，但模板数据与用户历史任务完全隔离。
+在原始画廊首页加入可直接浏览和复用的模板展示。模板从 `image-sample-library/gpt-image-playground-20260715-excellent` 中精选，卡片视觉沿用现有历史生成记录卡片，但模板数据与用户历史任务完全隔离。
 
 成功标准：
 
-- Agent 工作台默认能看到模板区，不新增顶级路由或模式。
+- 原始画廊首页默认能看到模板区，不新增顶级路由或模式。
 - 首批展示 6 个内容和能力类型不同的模板，避免重复 Prompt 占据首屏。
 - 模板卡片与历史生成卡片保持一致的横向结构、尺寸、边框、图片区域、标签和交互反馈。
 - 点击“使用模板”只填充 Prompt 和尺寸参数，不自动调用生成 API。
@@ -17,7 +17,7 @@
 
 本次包含：
 
-- Agent 工作台模板列表。
+- 原始画廊首页模板列表。
 - 6 个精选模板的静态预览图和人工整理元数据。
 - 模板卡片及“使用模板”交互。
 - 响应式、深色模式、基础可访问性和测试。
@@ -38,28 +38,25 @@
 
 ## 页面结构
 
-`AgentWorkspace` 保留现有顶部区域：
-
-- Agent/画廊模式切换。
-- 完成、运行、异常任务统计。
-
-原居中占位说明替换为模板内容区：
+模板内容接入原始画廊首页，并保留既有搜索和任务网格：
 
 ```text
-AgentWorkspace
-├─ 顶部模式与任务统计
-└─ TemplateGallery
-   ├─ 标题与简短副标题
-   └─ 响应式网格
-      └─ TemplateCard × 6
+App
+└─ 原始画廊容器
+   ├─ TemplateGallery
+   │  ├─ 标题与简短副标题
+   │  └─ 响应式网格
+   │     └─ TemplateCard × 6
+   ├─ SearchBar
+   └─ TaskGrid
 ```
 
 网格规则：
 
-- 按工作台容器宽度自动排布，每张卡片至少约 `24rem`。
-- `1024px` 工作台为单列，`1440px` 工作台为双列。
-- 只有可用宽度足够时才进入三列，避免左侧历史栏压缩卡片内容。
-- 底部保留足够间距，避免固定输入栏遮挡最后一行卡片。
+- 按画廊容器宽度自动排布，每张卡片至少约 `24rem`。
+- `1024px` 页面为单列，`1440px` 页面为双列或三列。
+- 模板区下方继续显示原有搜索栏和任务网格。
+- 页面既有底部间距继续避免固定输入栏遮挡内容。
 
 ## 卡片设计
 
@@ -146,16 +143,15 @@ TemplateCard 点击“使用模板”
 - `src/components/TemplateCard.tsx`
 - `src/data/templateSamples.ts`
 - `src/data/templateSamples.test.ts`
-- `src/components/AgentWorkspace.test.tsx`
+- `src/App.test.tsx`
 - `public/templates/` 下 6 张 WebP
 
 预计修改：
 
-- `src/components/AgentWorkspace.tsx`
+- `src/App.tsx`
 
 不修改：
 
-- `src/App.tsx`
 - `src/components/TaskCard.tsx`
 - `src/store.ts`
 - `src/types.ts`
@@ -166,7 +162,7 @@ TemplateCard 点击“使用模板”
 自动验证：
 
 1. `templateSamples` 数据测试：数量固定为 6、ID 唯一、必填字段完整、图片地址和参考图标记正确。
-2. `AgentWorkspace` 静态渲染测试：模板标题、6 张卡片、图片懒加载、使用按钮和“需参考图”标签存在。
+2. `App` 静态渲染测试：原始画廊流程仍存在，模板区位于搜索和任务网格之前。
 3. `npm test`：全量回归。
 4. `npm run build`：TypeScript 与 Vite 生产构建。
 
@@ -182,4 +178,4 @@ TemplateCard 点击“使用模板”
 
 ## 回滚
 
-回滚只需移除模板组件、模板数据、6 张静态图片和 `AgentWorkspace` 中的模板渲染入口。由于不修改 Store、任务结构、IndexedDB 或路由，不涉及数据迁移和用户历史记录恢复。
+回滚只需移除模板组件、模板数据、6 张静态图片和 `App` 中的模板渲染入口。由于不修改 Store、任务结构、IndexedDB 或路由，不涉及数据迁移和用户历史记录恢复。

@@ -23,7 +23,7 @@ export function applyTemplate(template: TemplateSample) {
 
 export default function TemplateGallery() {
   return (
-    <section className="pb-48 sm:pb-52" aria-labelledby="template-gallery-title">
+    <section className="pt-6 pb-2 sm:pb-4" aria-labelledby="template-gallery-title">
       <div className="mb-4">
         <h2
           id="template-gallery-title"

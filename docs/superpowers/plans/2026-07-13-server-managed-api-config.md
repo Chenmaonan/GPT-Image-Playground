@@ -235,8 +235,6 @@ Expected: PASS.
 - Modify: `src/components/InputBar.tsx`
 - Modify: `src/components/DetailModal.tsx`
 - Modify: `src/components/TaskCard.tsx`
-- Modify: `src/components/HistorySidebar.tsx`
-- Modify: `src/App.tsx`
 
 **Interfaces:**
 - Consumes: `getRuntimeConfigState`, `getEffectiveApiProfile`, `isServerApiConfigEnabled`, `isServerApiConfigUsable`.

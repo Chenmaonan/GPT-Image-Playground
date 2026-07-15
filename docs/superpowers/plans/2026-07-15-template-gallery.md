@@ -1,8 +1,8 @@
 # 工作台模板展示实施计划
 
-> **执行要求：** 按任务顺序实施；适合并行的独立文件由 Ultra 子代理处理，主代理负责 `AgentWorkspace` 接入、结果整合和最终验证。
+> **执行要求：** 按任务顺序实施；模板组件保持独立，首页接入、结果整合和最终验证集中处理。
 
-**目标：** 在 Agent 工作台展示 6 个精选模板，卡片沿用历史生成记录卡片视觉，点击后填充 Prompt 与尺寸，不自动生成。
+**目标：** 在原始画廊首页展示 6 个精选模板，卡片沿用历史生成记录卡片视觉，点击后填充 Prompt 与尺寸，不自动生成。
 
 **架构：** 使用独立静态模板数据和 `TemplateGallery -> TemplateCard` 组件链。模板资源放在 `public/templates/`，模板行为只调用现有 Zustand `setPrompt`、`setParams` 和 `showToast`，不进入任务 Store 或 IndexedDB。
 
@@ -10,7 +10,7 @@
 
 ## 全局约束
 
-- 不修改或覆盖用户现有的 `src/App.tsx` 工作树改动。
+- `src/App.tsx` 只增加模板挂载入口，不引入新的顶级模式或页面。
 - 不修改 `TaskRecord`、IndexedDB schema、路由、历史筛选和部署配置。
 - 不新增依赖，不联网，不删除文件，不部署、不发布、不推送。
 - 只复制 6 张已批准的 WebP，不把 43 张完整样例库打入生产资源。
@@ -182,7 +182,7 @@ export function applyTemplate(template: TemplateSample) {
 
 - [ ] **步骤 3：实现列表、响应式网格和输入聚焦**
 
-网格使用 `auto-fit + minmax(min(100%, 24rem), 1fr)` 按容器宽度自动排布，避免 Agent 历史侧栏压缩卡片。应用模板后用 `requestAnimationFrame` 查找 `[data-input-bar] [contenteditable="true"]`，调用 `focus()` 和 `scrollIntoView({ block: 'nearest' })`；找不到输入元素时静默跳过，不影响 Store 更新。
+网格使用 `auto-fit + minmax(min(100%, 24rem), 1fr)` 按画廊容器宽度自动排布。应用模板后用 `requestAnimationFrame` 查找 `[data-input-bar] [contenteditable="true"]`，调用 `focus()` 和 `scrollIntoView({ block: 'nearest' })`；找不到输入元素时静默跳过，不影响 Store 更新。
 
 - [ ] **步骤 4：运行列表测试**
 
@@ -190,40 +190,40 @@ export function applyTemplate(template: TemplateSample) {
 
 预期：PASS。
 
-### 任务 4：接入 Agent 工作台
+### 任务 4：接入原始画廊首页
 
 **文件：**
 
-- 修改：`src/components/AgentWorkspace.tsx`
-- 新增：`src/components/AgentWorkspace.test.tsx`
+- 修改：`src/App.tsx`
+- 新增：`src/App.test.tsx`
 
-- [ ] **步骤 1：先写工作台结构测试**
+- [ ] **步骤 1：先写首页结构测试**
 
 使用 Store mock 和 `renderToStaticMarkup` 验证：
 
-- 顶部模式插槽仍存在。
-- 完成、运行、异常统计保持正确。
-- 原“Agent 模式”占位说明被模板标题和 6 张模板卡替换。
-- 模板区在有历史任务和无历史任务时都渲染。
+- 原始画廊的搜索栏和任务网格仍存在。
+- 模板区位于搜索栏和任务网格之前。
+- 底部输入栏继续存在。
+- 页面不再包含 Agent 模式入口或新 Agent 页面。
 
 - [ ] **步骤 2：运行测试并确认失败**
 
-执行：`npm test -- src/components/AgentWorkspace.test.tsx`
+执行：`npm test -- src/App.test.tsx`
 
-预期：FAIL，原因是工作台尚未挂载模板列表。
+预期：FAIL，原因是原始画廊首页尚未挂载模板列表。
 
-- [ ] **步骤 3：替换占位区并保留布局边界**
+- [ ] **步骤 3：挂载模板区并保留原始画廊流程**
 
-只修改 `AgentWorkspace.tsx`：
+只修改 `App.tsx`：
 
-- 保留模式切换和统计。
-- 主区域从垂直居中占位改为顶部对齐的模板区。
-- 保留 `pb-56`，避免固定输入栏遮挡。
-- 不修改 `App.tsx`、`HistorySidebar` 或 `InputBar`。
+- 在原始画廊容器顶部挂载 `TemplateGallery`。
+- 保留 `SearchBar`、`TaskGrid` 和 `InputBar` 的原有调用方式。
+- 不新增 Agent/画廊模式切换。
+- 不修改任务 Store 或 IndexedDB。
 
-- [ ] **步骤 4：运行工作台测试**
+- [ ] **步骤 4：运行首页测试**
 
-执行：`npm test -- src/components/AgentWorkspace.test.tsx`
+执行：`npm test -- src/App.test.tsx`
 
 预期：PASS。
 
@@ -241,7 +241,7 @@ export function applyTemplate(template: TemplateSample) {
 执行：
 
 ```powershell
-npm test -- src/data/templateSamples.test.ts src/components/TemplateCard.test.tsx src/components/TemplateGallery.test.tsx src/components/AgentWorkspace.test.tsx
+npm test -- src/data/templateSamples.test.ts src/components/TemplateCard.test.tsx src/components/TemplateGallery.test.tsx src/App.test.tsx
 ```
 
 预期：全部 PASS。
@@ -277,16 +277,15 @@ git diff --check
 git status --short
 ```
 
-预期：只保留本任务业务改动、实施计划，以及用户原有 `src/App.tsx` 修改和未跟踪样例库；没有测试临时文件。
+预期：只保留本任务业务改动、实施计划和未跟踪样例库；没有测试临时文件。
 
 - [ ] **步骤 5：按需求逐项完成审计**
 
 核对证据：
 
-- “工作台内添加模板展示”由 `AgentWorkspace` 实际渲染和浏览器截图证明。
+- “画廊首页添加模板展示”由 `App` 实际渲染和浏览器截图证明。
 - “从优秀样例库选取内容”由数据源 ID、Prompt、复制资源哈希证明。
 - “卡片沿用历史记录样式”由组件 class 对照和桌面/移动视觉检查证明。
-- “使用 Ultra 多智能体工作流”由独立子任务结果、主代理交叉验证和最终集成记录证明。
 
 - [ ] **步骤 6：询问 Docker 测试与 Git 提交**
 
@@ -294,4 +293,4 @@ git status --short
 
 ## 回滚
 
-移除 `TemplateGallery`、`TemplateCard`、模板数据、对应测试、6 张静态图片，并恢复 `AgentWorkspace` 的原占位内容。没有 Store schema、用户数据或路由迁移，不需要额外恢复步骤。
+移除 `TemplateGallery`、`TemplateCard`、模板数据、对应测试、6 张静态图片，并移除 `App` 中的模板挂载入口。没有 Store schema、用户数据或路由迁移，不需要额外恢复步骤。
