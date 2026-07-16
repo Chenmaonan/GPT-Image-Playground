@@ -77,14 +77,14 @@ function normalizeImageApiPayload(value: unknown): ImageApiResponse {
   return { data: [] }
 }
 
-function createRequestHeaders(profile: ApiProfile): Record<string, string> {
+export function createRequestHeaders(profile: ApiProfile): Record<string, string> {
   if (isServerApiConfigEnabled()) return {}
   return {
     Authorization: `Bearer ${profile.apiKey}`,
   }
 }
 
-function buildOpenAIRequestUrl(
+export function buildOpenAIRequestUrl(
   profile: ApiProfile,
   path: string,
   proxyConfig: ReturnType<typeof readClientDevProxyConfig>,
@@ -96,7 +96,7 @@ function buildOpenAIRequestUrl(
   return buildApiUrl(profile.baseUrl, path, proxyConfig, useApiProxy)
 }
 
-function createResponsesImageTool(
+export function createResponsesImageTool(
   params: TaskParams,
   isEdit: boolean,
   profile: ApiProfile,
@@ -144,7 +144,7 @@ function createResponsesInput(prompt: string, inputImageDataUrls: string[]): unk
   ]
 }
 
-function parseResponsesImageResults(payload: ResponsesApiResponse, fallbackMime: string): Array<{
+export function parseResponsesImageResults(payload: ResponsesApiResponse, fallbackMime: string): Array<{
   image: string
   actualParams?: Partial<TaskParams>
   revisedPrompt?: string

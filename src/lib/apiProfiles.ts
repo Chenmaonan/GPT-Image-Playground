@@ -448,6 +448,10 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
     reuseTaskApiProfileTemporarily: typeof record.reuseTaskApiProfileTemporarily === 'boolean' ? record.reuseTaskApiProfileTemporarily : false,
     alwaysShowRetryButton: typeof record.alwaysShowRetryButton === 'boolean' ? record.alwaysShowRetryButton : false,
     enterSubmit: typeof record.enterSubmit === 'boolean' ? record.enterSubmit : false,
+    agentStreaming: typeof record.agentStreaming === 'boolean' ? record.agentStreaming : true,
+    agentImageCount: typeof record.agentImageCount === 'number' && Number.isFinite(record.agentImageCount)
+      ? Math.min(4, Math.max(1, Math.round(record.agentImageCount)))
+      : 1,
     profiles,
     activeProfileId,
   }
@@ -724,4 +728,6 @@ export const DEFAULT_SETTINGS: AppSettings = normalizeSettings({
   reuseTaskApiProfileTemporarily: false,
   alwaysShowRetryButton: false,
   enterSubmit: false,
+  agentStreaming: true,
+  agentImageCount: 1,
 })

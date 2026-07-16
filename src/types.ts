@@ -83,6 +83,8 @@ export interface AppSettings {
   reuseTaskApiProfileTemporarily: boolean
   alwaysShowRetryButton: boolean
   enterSubmit: boolean
+  agentStreaming: boolean
+  agentImageCount: number
   profiles: ApiProfile[]
   activeProfileId: string
 }

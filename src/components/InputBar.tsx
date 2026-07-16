@@ -16,6 +16,7 @@ import { normalizeImageSize } from '../lib/size'
 import { createMaskPreviewDataUrl } from '../lib/canvasImage'
 import { dismissAllTooltips } from '../lib/tooltipDismiss'
 import { getSafeBoundingClientRect } from '../lib/domRect'
+import { storeBackedAgentExecutor } from '../lib/agentExecutor'
 import Select from './Select'
 import SizePickerModal from './SizePickerModal'
 import ViewportTooltip from './ViewportTooltip'
@@ -474,9 +475,23 @@ export default function InputBar({ onTaskSubmitted, layout = 'default' }: InputB
   const hasSubmitApiConfig = serverManaged ? serverConfigUsable : Boolean(activeProfile.apiKey)
   const canSubmit = Boolean(prompt.trim() && hasSubmitApiConfig)
   const handleSubmit = useCallback(async () => {
-    const taskId = await submitTask()
+    if (layout === 'agent' && (activeProfile.provider !== 'openai' || activeProfile.apiMode !== 'responses')) {
+      showToast('Agent 模式需要使用 OpenAI 兼容的 Responses API 配置', 'error')
+      if (!serverManaged) setShowSettings(true)
+      return
+    }
+
+    const taskId = layout === 'agent'
+      ? await storeBackedAgentExecutor.submit({
+        prompt: prompt.trim(),
+        inputImageIds: inputImages.map((image) => image.id),
+        params,
+        stream: settings.agentStreaming,
+        imageCount: settings.agentImageCount,
+      })
+      : await submitTask()
     if (taskId) onTaskSubmitted?.(taskId)
-  }, [onTaskSubmitted])
+  }, [activeProfile.apiMode, activeProfile.provider, inputImages, layout, onTaskSubmitted, params, prompt, serverManaged, setShowSettings, settings.agentImageCount, settings.agentStreaming, showToast])
   const missingApiConfigMessage = serverManaged
     ? '服务端 API 配置不可用，请联系部署管理员'
     : '尚未完成 API 配置，请在右上角设置中进行'

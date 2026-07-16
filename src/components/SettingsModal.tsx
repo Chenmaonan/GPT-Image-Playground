@@ -1157,6 +1157,40 @@ export default function SettingsModal() {
                     关闭后，不再持久化提示词和参考图，下次启动会使用空输入框。
                   </div>
                 </div>
+                <div className="block">
+                  <div className="mb-1 flex items-center justify-between">
+                    <span className="block text-sm text-gray-600 dark:text-gray-300">Agent 使用流式展示</span>
+                    <button
+                      type="button"
+                      onClick={() => commitSettings({ ...draft, agentStreaming: !draft.agentStreaming })}
+                      className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${draft.agentStreaming ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}
+                      role="switch"
+                      aria-checked={draft.agentStreaming}
+                      aria-label="Agent 使用流式展示"
+                    >
+                      <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${draft.agentStreaming ? 'translate-x-[14px]' : 'translate-x-[2px]'}`} />
+                    </button>
+                  </div>
+                  <div data-selectable-text className="text-xs text-gray-500 dark:text-gray-500">
+                    开启后，Agent 模式会按 Responses 流式事件展示对话和工具调用；关闭后等待完整响应再展示结果。
+                  </div>
+                </div>
+                <label className="block">
+                  <span className="block text-sm text-gray-600 dark:text-gray-300 mb-1">Agent 单次生成数量</span>
+                  <Select
+                    value={String(draft.agentImageCount)}
+                    onChange={(value) => commitSettings({ ...draft, agentImageCount: Number(value) })}
+                    options={[
+                      { label: '1 张', value: '1' },
+                      { label: '2 张', value: '2' },
+                      { label: '3 张', value: '3' },
+                      { label: '4 张', value: '4' },
+                    ]}
+                  />
+                  <div data-selectable-text className="mt-1 text-xs text-gray-500 dark:text-gray-500">
+                    Agent 模式会按该数量逐张调用图像工具，普通画廊模式仍使用底部参数里的数量。
+                  </div>
+                </label>
                 {!serverManaged && (
                   <div className="block">
                     <div className="mb-1 flex items-center justify-between">

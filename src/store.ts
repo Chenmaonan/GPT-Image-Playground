@@ -30,7 +30,7 @@ import {
   clearImages,
   storeImage,
 } from './lib/db'
-import { callImageApi } from './lib/api'
+import { callImageApi, type CallApiOptions, type CallApiResult } from './lib/api'
 import { IMAGE_FETCH_CORS_HINT } from './lib/imageApiShared'
 import { getFalErrorMessage, getFalQueuedImageResult } from './lib/falAiImageApi'
 import {
@@ -1093,8 +1093,21 @@ export async function initStore() {
   }
 }
 
+type TaskApiCaller = (opts: CallApiOptions) => Promise<CallApiResult>
+
+interface SubmitTaskOptions {
+  allowFullMask?: boolean
+  useCurrentApiProfileWhenReusedMissing?: boolean
+  callApi?: TaskApiCaller
+  onTaskCreated?: (taskId: string) => void
+}
+
+interface ExecuteTaskOptions {
+  callApi?: TaskApiCaller
+}
+
 /** 提交新任务 */
-export async function submitTask(options: { allowFullMask?: boolean; useCurrentApiProfileWhenReusedMissing?: boolean } = {}): Promise<string | null> {
+export async function submitTask(options: SubmitTaskOptions = {}): Promise<string | null> {
   const { settings, prompt, inputImages, maskDraft, params, reusedTaskApiProfileId, reusedTaskApiProfileName, reusedTaskApiProfileMissing, showToast, setConfirmDialog } =
     useStore.getState()
 
@@ -1216,11 +1229,12 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
   useStore.getState().setReusedTaskApiProfile(null)
 
   // 异步调用 API
-  void executeTask(taskId)
+  options.onTaskCreated?.(taskId)
+  void executeTask(taskId, { callApi: options.callApi })
   return taskId
 }
 
-async function executeTask(taskId: string) {
+async function executeTask(taskId: string, options: ExecuteTaskOptions = {}) {
   const { settings } = useStore.getState()
   const task = useStore.getState().tasks.find((t) => t.id === taskId)
   if (!task) return
@@ -1276,7 +1290,8 @@ async function executeTask(taskId: string) {
       if (!maskDataUrl) throw new Error('遮罩图片已不存在')
     }
 
-    const result = await callImageApi({
+    const apiCaller = options.callApi ?? callImageApi
+    const result = await apiCaller({
       settings: requestSettings,
       prompt: replaceImageMentionsForApi(task.prompt, inputDataUrls.length),
       params: task.params,

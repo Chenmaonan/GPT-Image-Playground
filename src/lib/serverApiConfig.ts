@@ -224,5 +224,7 @@ export function sanitizeSettingsPatchForServerMode(patch: Partial<AppSettings>):
   if (typeof patch.persistInputOnRestart === 'boolean') sanitized.persistInputOnRestart = patch.persistInputOnRestart
   if (typeof patch.alwaysShowRetryButton === 'boolean') sanitized.alwaysShowRetryButton = patch.alwaysShowRetryButton
   if (typeof patch.enterSubmit === 'boolean') sanitized.enterSubmit = patch.enterSubmit
+  if (typeof patch.agentStreaming === 'boolean') sanitized.agentStreaming = patch.agentStreaming
+  if (typeof patch.agentImageCount === 'number') sanitized.agentImageCount = patch.agentImageCount
   return sanitized
 }
