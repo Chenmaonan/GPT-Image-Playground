@@ -60,6 +60,8 @@ describe('AgentWorkspace', () => {
     expect(markup).toContain('data-component="agent-main"')
     expect(markup).toContain('data-component="agent-templates"')
     expect(markup).toContain('data-task="task-old"')
+    expect(markup).toContain('grid-cols-[minmax(20rem,24rem)_minmax(0,1fr)_minmax(18rem,22rem)]')
+    expect(markup).toContain('2xl:grid-cols-[minmax(22rem,26rem)_minmax(0,1fr)_minmax(19rem,23rem)]')
   })
 
   it('selects the adjacent task after the active task is removed', () => {

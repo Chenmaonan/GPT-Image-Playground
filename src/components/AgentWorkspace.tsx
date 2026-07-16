@@ -87,7 +87,7 @@ export default function AgentWorkspace({ activeTaskId, onActiveTaskChange }: Age
         ))}
       </div>
 
-      <div data-agent-desktop-layout className="hidden h-[calc(100vh-13rem)] min-h-[36rem] grid-cols-[minmax(22.5rem,26rem)_minmax(32rem,1fr)_minmax(18.75rem,21.25rem)] gap-4 xl:grid">
+      <div data-agent-desktop-layout className="hidden h-[calc(100vh-13rem)] min-h-[36rem] grid-cols-[minmax(20rem,24rem)_minmax(0,1fr)_minmax(18rem,22rem)] gap-4 2xl:grid-cols-[minmax(22rem,26rem)_minmax(0,1fr)_minmax(19rem,23rem)] xl:grid">
         <div className="min-h-0 overflow-hidden rounded-2xl border border-gray-200 bg-gray-50 dark:border-white/[0.08] dark:bg-gray-950">
           <AgentHistoryPanel activeTaskId={activeTaskId} onSelectTask={handleSelectTask} />
         </div>

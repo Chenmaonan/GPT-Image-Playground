@@ -1692,7 +1692,7 @@ export default function InputBar({ onTaskSubmitted, layout = 'default' }: InputB
 
       <div data-input-bar className={`fixed bottom-4 sm:bottom-6 z-30 w-full px-3 sm:px-4 transition-all duration-300 ${
         layout === 'agent'
-          ? 'left-1/2 -translate-x-1/2 max-w-3xl xl:left-[calc(50%+20px)] xl:max-w-[min(48rem,calc(100vw-760px))]'
+          ? 'left-1/2 -translate-x-1/2 max-w-3xl xl:left-[calc(50%+1rem)] xl:max-w-[min(54rem,calc(100vw-46rem))]'
           : 'left-1/2 -translate-x-1/2 max-w-4xl'
       }`}>
         {selectedTaskIds.length > 0 && (

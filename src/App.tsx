@@ -54,7 +54,11 @@ export default function App() {
     <>
       <Header />
       <main data-home-main data-drag-select-surface className={workspaceMode === 'agent' ? 'pb-8' : 'pb-48'}>
-        <div className="safe-area-x max-w-7xl mx-auto">
+        <div className={`safe-area-x mx-auto ${
+          workspaceMode === 'agent'
+            ? 'w-full max-w-[96rem] 2xl:max-w-[108rem]'
+            : 'max-w-7xl'
+        }`}>
           <div data-no-drag-select className="mt-6 flex justify-center">
             <div className="inline-flex rounded-2xl border border-gray-200 bg-white p-1 shadow-sm dark:border-white/[0.08] dark:bg-gray-900" role="tablist" aria-label="工作区模式">
               <button
