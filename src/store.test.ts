@@ -643,6 +643,34 @@ describe('server-managed API configuration', () => {
     expect(settings.reuseTaskApiProfileTemporarily).toBe(false)
   })
 
+  it('persists allowed managed API mode and model selections into the active profile', () => {
+    initializeRuntimeConfig({
+      ...managedConfig,
+      serverApi: {
+        ...managedConfig.serverApi,
+        modelOptions: ['server-model', 'gpt-5.5'],
+        apiModeOptions: ['images', 'responses'],
+      },
+    })
+
+    useStore.getState().setSettings({
+      apiMode: 'responses',
+      model: 'gpt-5.5',
+    })
+
+    const settings = useStore.getState().settings
+    expect(settings.apiMode).toBe('responses')
+    expect(settings.model).toBe('gpt-5.5')
+    expect(settings.profiles.find((profile) => profile.id === settings.activeProfileId)).toMatchObject({
+      apiMode: 'responses',
+      model: 'gpt-5.5',
+    })
+    expect(getEffectiveApiProfile(settings)).toMatchObject({
+      apiMode: 'responses',
+      model: 'gpt-5.5',
+    })
+  })
+
   it('resolves every task to the managed profile', () => {
     const resolved = getTaskApiProfile(useStore.getState().settings, task({
       apiProvider: 'fal',

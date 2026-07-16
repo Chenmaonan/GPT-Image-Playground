@@ -54,6 +54,32 @@ const DEFAULT_COPY_IMPORT_URL_OPTIONS = {
 
 type CopyImportUrlOptions = typeof DEFAULT_COPY_IMPORT_URL_OPTIONS
 
+export function applyServerManagedSelectionToDraft(
+  draft: AppSettings,
+  patch: Partial<Pick<AppSettings, 'apiMode' | 'model'>>,
+): AppSettings {
+  const activeProfilePatch: Partial<ApiProfile> = {}
+  if (patch.apiMode) activeProfilePatch.apiMode = patch.apiMode
+  if (typeof patch.model === 'string') activeProfilePatch.model = patch.model
+
+  let patchedActiveProfile = false
+  const profiles = draft.profiles.map((profile) => {
+    if (profile.id !== draft.activeProfileId) return profile
+    patchedActiveProfile = true
+    return { ...profile, ...activeProfilePatch }
+  })
+
+  if (!patchedActiveProfile && profiles[0]) {
+    profiles[0] = { ...profiles[0], ...activeProfilePatch }
+  }
+
+  return {
+    ...draft,
+    ...patch,
+    profiles,
+  }
+}
+
 function readCopyImportUrlOptions(): CopyImportUrlOptions {
   if (typeof window === 'undefined') return DEFAULT_COPY_IMPORT_URL_OPTIONS
 
@@ -1256,7 +1282,7 @@ export default function SettingsModal() {
                             value={serverProfile.apiMode}
                             onChange={(value) => {
                               const apiMode = value as AppSettings['apiMode']
-                              commitSettings({ ...draft, apiMode })
+                              commitSettings(applyServerManagedSelectionToDraft(draft, { apiMode }))
                             }}
                             options={serverApiOptions.apiModeOptions.map((mode) => ({
                               label: mode === 'responses' ? 'Responses API (/v1/responses)' : 'Images API (/v1/images)',
@@ -1275,7 +1301,7 @@ export default function SettingsModal() {
                         {serverProfile && serverApiOptions ? (
                           <Select
                             value={serverProfile.model}
-                            onChange={(model) => commitSettings({ ...draft, model })}
+                            onChange={(model) => commitSettings(applyServerManagedSelectionToDraft(draft, { model }))}
                             options={serverApiOptions.modelOptions.map((model) => ({ label: model, value: model }))}
                             className="w-full rounded-lg border border-blue-100 bg-white/80 px-2 py-1.5 text-xs text-gray-700 outline-none dark:border-blue-500/20 dark:bg-white/[0.04] dark:text-gray-100"
                           />
