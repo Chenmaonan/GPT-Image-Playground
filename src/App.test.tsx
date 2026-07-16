@@ -22,6 +22,7 @@ vi.mock('./components/Header', () => ({ default: () => <div data-component="head
 vi.mock('./components/TemplateGallery', () => ({ default: () => <div data-component="template-gallery" /> }))
 vi.mock('./components/SearchBar', () => ({ default: () => <div data-component="search-bar" /> }))
 vi.mock('./components/TaskGrid', () => ({ default: () => <div data-component="task-grid" /> }))
+vi.mock('./components/AgentWorkspace', () => ({ default: () => <div data-component="agent-workspace" /> }))
 vi.mock('./components/InputBar', () => ({ default: () => <div data-component="input-bar" /> }))
 vi.mock('./components/DetailModal', () => ({ default: () => <div data-component="detail-modal" /> }))
 vi.mock('./components/Lightbox', () => ({ default: () => <div data-component="lightbox" /> }))
@@ -34,16 +35,18 @@ vi.mock('./components/ImageContextMenu', () => ({ default: () => <div data-compo
 import App from './App'
 
 describe('App gallery home', () => {
-  it('keeps the original gallery flow and mounts templates before task history', () => {
+  it('defaults to gallery mode and hides templates from gallery', () => {
     const markup = renderToStaticMarkup(<App />)
     const templateIndex = markup.indexOf('data-component="template-gallery"')
     const searchIndex = markup.indexOf('data-component="search-bar"')
     const taskGridIndex = markup.indexOf('data-component="task-grid"')
 
-    expect(templateIndex).toBeGreaterThan(-1)
-    expect(searchIndex).toBeGreaterThan(templateIndex)
+    expect(templateIndex).toBe(-1)
+    expect(searchIndex).toBeGreaterThan(-1)
     expect(taskGridIndex).toBeGreaterThan(searchIndex)
     expect(markup).toContain('data-component="input-bar"')
-    expect(markup).not.toContain('Agent 模式')
+    expect(markup).toContain('画廊')
+    expect(markup).toContain('Agent')
+    expect(markup).not.toContain('data-component="agent-workspace"')
   })
 })

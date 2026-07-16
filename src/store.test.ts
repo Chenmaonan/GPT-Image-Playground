@@ -133,8 +133,9 @@ describe('mask draft lifecycle in store actions', () => {
       },
     })
 
-    await submitTask()
+    const submittedTaskId = await submitTask()
 
+    expect(submittedTaskId).toBeNull()
     expect(useStore.getState().maskDraft).toBeNull()
   })
 
@@ -672,9 +673,10 @@ describe('server-managed API configuration', () => {
     }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     useStore.setState({ prompt: 'prompt' })
 
-    await submitTask()
+    const submittedTaskId = await submitTask()
 
     const created = useStore.getState().tasks[0]
+    expect(submittedTaskId).toBe(created.id)
     expect(created).toMatchObject({
       apiProvider: 'openai',
       apiProfileId: 'server-managed-openai',

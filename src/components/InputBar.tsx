@@ -10,6 +10,7 @@ import {
   isServerApiConfigUsable,
 } from '../lib/serverApiConfig'
 import { DEFAULT_FAL_IMAGE_SIZE, getChangedParams, getOutputImageLimitForSettings, normalizeParamsForSettings } from '../lib/paramCompatibility'
+import { filterAndSortTasks } from '../lib/taskFilters'
 import { getAtImageQuery, getImageMentionLabel, getPromptIndexFromVisibleIndex, getPromptMentionParts, getSelectedImageMentionLabel, imageMentionMatches, insertImageMentionAtVisibleRange, isCursorInSelectedImageMention, stripImageMentionMarkers } from '../lib/promptImageMentions'
 import { normalizeImageSize } from '../lib/size'
 import { createMaskPreviewDataUrl } from '../lib/canvasImage'
@@ -275,7 +276,12 @@ function useIsMobile() {
   return isMobile
 }
 
-export default function InputBar() {
+interface InputBarProps {
+  onTaskSubmitted?: (taskId: string) => void
+  layout?: 'default' | 'agent'
+}
+
+export default function InputBar({ onTaskSubmitted, layout = 'default' }: InputBarProps) {
   const prompt = useStore((s) => s.prompt)
   const setPrompt = useStore((s) => s.setPrompt)
   const inputImages = useStore((s) => s.inputImages)
@@ -298,19 +304,7 @@ export default function InputBar() {
   const searchQuery = useStore((s) => s.searchQuery)
 
   const filteredTasks = useMemo(() => {
-    const sorted = [...tasks].sort((a, b) => b.createdAt - a.createdAt)
-    const q = searchQuery.trim().toLowerCase()
-    
-    return sorted.filter((t) => {
-      if (filterFavorite && !t.isFavorite) return false
-      const matchStatus = filterStatus === 'all' || t.status === filterStatus
-      if (!matchStatus) return false
-      
-      if (!q) return true
-      const prompt = (t.prompt || '').toLowerCase()
-      const paramStr = JSON.stringify(t.params).toLowerCase()
-      return prompt.includes(q) || paramStr.includes(q)
-    })
+    return filterAndSortTasks(tasks, { searchQuery, filterStatus, filterFavorite })
   }, [tasks, searchQuery, filterStatus, filterFavorite])
 
   const handleSelectAllToggle = useCallback(() => {
@@ -479,6 +473,10 @@ export default function InputBar() {
   }, [activeProfile, currentActiveProfile.id, serverManaged, settings])
   const hasSubmitApiConfig = serverManaged ? serverConfigUsable : Boolean(activeProfile.apiKey)
   const canSubmit = Boolean(prompt.trim() && hasSubmitApiConfig)
+  const handleSubmit = useCallback(async () => {
+    const taskId = await submitTask()
+    if (taskId) onTaskSubmitted?.(taskId)
+  }, [onTaskSubmitted])
   const missingApiConfigMessage = serverManaged
     ? '服务端 API 配置不可用，请联系部署管理员'
     : '尚未完成 API 配置，请在右上角设置中进行'
@@ -913,11 +911,11 @@ export default function InputBar() {
         if (e.shiftKey) {
           insertPromptTextAtSelection('\n')
         } else if (!isModifier) {
-          if (canSubmit) submitTask()
+          if (canSubmit) void handleSubmit()
         }
       } else {
         if (isModifier) {
-          if (canSubmit) submitTask()
+          if (canSubmit) void handleSubmit()
         } else {
           insertPromptTextAtSelection('\n')
         }
@@ -1677,7 +1675,11 @@ export default function InputBar() {
         />
       )}
 
-      <div data-input-bar className="fixed bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 z-30 w-full max-w-4xl px-3 sm:px-4 transition-all duration-300">
+      <div data-input-bar className={`fixed bottom-4 sm:bottom-6 z-30 w-full px-3 sm:px-4 transition-all duration-300 ${
+        layout === 'agent'
+          ? 'left-1/2 -translate-x-1/2 max-w-3xl xl:left-[calc(50%+20px)] xl:max-w-[min(48rem,calc(100vw-760px))]'
+          : 'left-1/2 -translate-x-1/2 max-w-4xl'
+      }`}>
         {selectedTaskIds.length > 0 && (
           <div className="flex justify-center mb-3">
             <div className="bg-white/90 dark:bg-gray-800/90 backdrop-blur shadow-[0_8px_30px_rgb(0,0,0,0.12)] dark:shadow-lg rounded-full flex items-center p-1 border border-gray-200/50 dark:border-white/10 pointer-events-auto">
@@ -1890,7 +1892,7 @@ export default function InputBar() {
                   <ButtonTooltip visible={!hasSubmitApiConfig && submitHover} text={missingApiConfigMessage} />
                   <button
                     onClick={() => {
-                      if (hasSubmitApiConfig) submitTask()
+                      if (hasSubmitApiConfig) void handleSubmit()
                       else if (!serverManaged) setShowSettings(true)
                     }}
                     disabled={hasSubmitApiConfig ? !canSubmit : serverManaged}
@@ -1947,7 +1949,7 @@ export default function InputBar() {
                   <ButtonTooltip visible={!hasSubmitApiConfig && submitHover} text={missingApiConfigMessage} />
                   <button
                     onClick={() => {
-                      if (hasSubmitApiConfig) submitTask()
+                      if (hasSubmitApiConfig) void handleSubmit()
                       else if (!serverManaged) setShowSettings(true)
                     }}
                     disabled={hasSubmitApiConfig ? !canSubmit : serverManaged}

@@ -1094,13 +1094,13 @@ export async function initStore() {
 }
 
 /** 提交新任务 */
-export async function submitTask(options: { allowFullMask?: boolean; useCurrentApiProfileWhenReusedMissing?: boolean } = {}) {
+export async function submitTask(options: { allowFullMask?: boolean; useCurrentApiProfileWhenReusedMissing?: boolean } = {}): Promise<string | null> {
   const { settings, prompt, inputImages, maskDraft, params, reusedTaskApiProfileId, reusedTaskApiProfileName, reusedTaskApiProfileMissing, showToast, setConfirmDialog } =
     useStore.getState()
 
   if (getRuntimeConfigState().status !== 'ready') {
     showToast('服务端 API 配置不可用，请联系部署管理员', 'error')
-    return
+    return null
   }
 
   const effectiveSettings = getEffectiveSettings(settings)
@@ -1122,7 +1122,7 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
         void submitTask({ ...options, useCurrentApiProfileWhenReusedMissing: true })
       },
         })
-        return
+        return null
       }
     } else {
       activeProfile = reusedProfile
@@ -1134,12 +1134,12 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
   if (profileValidationError) {
     showToast(`请先完善请求 API 配置：${profileValidationError}`, 'error')
     if (!isServerApiConfigEnabled()) useStore.getState().setShowSettings(true)
-    return
+    return null
   }
 
   if (!prompt.trim()) {
     showToast('请输入提示词', 'error')
-    return
+    return null
   }
 
   let orderedInputImages = inputImages
@@ -1160,7 +1160,7 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
             void submitTask({ allowFullMask: true })
           },
         })
-        return
+        return null
       }
       maskImageId = await storeImage(maskDraft.maskDataUrl, 'mask')
       cacheImage(maskImageId, maskDraft.maskDataUrl)
@@ -1170,7 +1170,7 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
         useStore.getState().clearMaskDraft()
       }
       showToast(err instanceof Error ? err.message : String(err), 'error')
-      return
+      return null
     }
   }
 
@@ -1216,7 +1216,8 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
   useStore.getState().setReusedTaskApiProfile(null)
 
   // 异步调用 API
-  executeTask(taskId)
+  void executeTask(taskId)
+  return taskId
 }
 
 async function executeTask(taskId: string) {

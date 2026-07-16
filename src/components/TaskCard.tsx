@@ -7,6 +7,8 @@ import { DEFAULT_IMAGES_MODEL, DEFAULT_FAL_MODEL } from '../lib/apiProfiles'
 import { getRuntimeConfigState, isServerApiConfigEnabled } from '../lib/serverApiConfig'
 import { CodeIcon } from './icons'
 
+export type TaskCardVariant = 'default' | 'compact'
+
 interface Props {
   task: TaskRecord
   onReuse: () => void
@@ -14,6 +16,8 @@ interface Props {
   onDelete: () => void
   onClick: (e: React.MouseEvent | React.TouchEvent) => void
   isSelected?: boolean
+  variant?: TaskCardVariant
+  selectionEnabled?: boolean
 }
 
 export default function TaskCard({
@@ -23,6 +27,8 @@ export default function TaskCard({
   onDelete,
   onClick,
   isSelected,
+  variant = 'default',
+  selectionEnabled = true,
 }: Props) {
   const [thumbSrc, setThumbSrc] = useState<string>('')
   const [coverRatio, setCoverRatio] = useState<string>('')
@@ -46,6 +52,7 @@ export default function TaskCard({
   }
 
   const handleTouchStart = (e: React.TouchEvent) => {
+    if (!selectionEnabled) return
     if (isTagScrollTarget(e.target)) {
       touchStartRef.current = null
       horizontalSwipeRef.current = false
@@ -67,6 +74,7 @@ export default function TaskCard({
   }
 
   const handleTouchMove = (e: React.TouchEvent) => {
+    if (!selectionEnabled) return
     if (isTagScrollTarget(e.target)) return
     if (!touchStartRef.current) return
     const deltaX = e.touches[0].clientX - touchStartRef.current.x
@@ -84,6 +92,7 @@ export default function TaskCard({
   }
 
   const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!selectionEnabled) return
     if (isTagScrollTarget(e.target)) {
       touchStartRef.current = null
       horizontalSwipeRef.current = false
@@ -117,6 +126,7 @@ export default function TaskCard({
   }
 
   const handleTouchCancel = () => {
+    if (!selectionEnabled) return
     touchStartRef.current = null
     horizontalSwipeRef.current = false
     setIsSwiping(false)
@@ -217,7 +227,7 @@ export default function TaskCard({
       {/* 侧滑底图 */}
       <div
         className={`absolute inset-0 rounded-xl flex items-center transition-opacity duration-200 pointer-events-none ${
-          isSwiping || swipeOffset || swipeActionActive ? 'opacity-100' : 'opacity-0'
+          selectionEnabled && (isSwiping || swipeOffset || swipeActionActive) ? 'opacity-100' : 'opacity-0'
         } ${swipeBgClass} ${
           swipeOffset > 0 ? 'justify-start pl-6' : 'justify-end pr-6'
         }`}
@@ -265,9 +275,9 @@ export default function TaskCard({
           </svg>
         </div>
       )}
-      <div className="flex h-40">
+      <div className={`flex ${variant === 'compact' ? 'h-32' : 'h-40'}`}>
         {/* 左侧图片区域 */}
-        <div className="w-40 min-w-[10rem] h-full bg-gray-100 dark:bg-black/20 relative flex items-center justify-center overflow-hidden flex-shrink-0">
+        <div className={`${variant === 'compact' ? 'w-28 min-w-[7rem]' : 'w-40 min-w-[10rem]'} h-full bg-gray-100 dark:bg-black/20 relative flex items-center justify-center overflow-hidden flex-shrink-0`}>
           {task.status === 'running' && (
             <div className="flex flex-col items-center gap-2">
               <svg
@@ -386,9 +396,9 @@ export default function TaskCard({
         </div>
 
         {/* 右侧信息区域 */}
-        <div className="flex-1 p-3 flex flex-col min-w-0">
+        <div className={`${variant === 'compact' ? 'p-2.5' : 'p-3'} flex-1 flex flex-col min-w-0`}>
           <div className="flex-1 min-h-0 mb-2 overflow-hidden">
-            <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed line-clamp-3">
+            <p className={`text-sm text-gray-700 dark:text-gray-300 leading-relaxed ${variant === 'compact' ? 'line-clamp-2' : 'line-clamp-3'}`}>
               {task.prompt || '(无提示词)'}
             </p>
           </div>

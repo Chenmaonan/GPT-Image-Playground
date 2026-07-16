@@ -4,16 +4,20 @@ import type { TemplateSample } from '../data/templateSamples'
 interface TemplateCardProps {
   template: TemplateSample
   onUse: (template: TemplateSample) => void
+  variant?: 'default' | 'rail'
 }
 
-export default function TemplateCard({ template, onUse }: TemplateCardProps) {
+export default function TemplateCard({ template, onUse, variant = 'default' }: TemplateCardProps) {
   const [imageFailed, setImageFailed] = useState(false)
   const imageAlt = template.alt.trim() || `${template.title}模板预览`
+  const isRail = variant === 'rail'
 
   return (
-    <article className="h-40 overflow-hidden rounded-xl border border-gray-200 bg-white transition-[box-shadow,border-color,background-color] duration-200 hover:border-gray-300 hover:shadow-lg dark:border-white/[0.08] dark:bg-gray-900 dark:hover:border-white/[0.18] dark:hover:bg-gray-800/80">
-      <div className="flex h-full">
-        <div className="relative flex h-full w-40 min-w-[10rem] flex-shrink-0 items-center justify-center overflow-hidden bg-gray-100 dark:bg-black/20">
+    <article className={`${isRail ? 'overflow-hidden' : 'h-40 overflow-hidden'} rounded-xl border border-gray-200 bg-white transition-[box-shadow,border-color,background-color] duration-200 hover:border-gray-300 hover:shadow-lg dark:border-white/[0.08] dark:bg-gray-900 dark:hover:border-white/[0.18] dark:hover:bg-gray-800/80`}>
+      <div className={isRail ? 'flex flex-col' : 'flex h-full'}>
+        <div className={`relative flex flex-shrink-0 items-center justify-center overflow-hidden bg-gray-100 dark:bg-black/20 ${
+          isRail ? 'aspect-[4/3] w-full' : 'h-full w-40 min-w-[10rem]'
+        }`}>
           {imageFailed ? (
             <svg
               aria-hidden="true"
@@ -44,14 +48,16 @@ export default function TemplateCard({ template, onUse }: TemplateCardProps) {
           <h3 className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">
             {template.title}
           </h3>
-          <p className="mt-1 line-clamp-2 min-h-0 flex-1 overflow-hidden text-sm leading-relaxed text-gray-600 dark:text-gray-300">
+          <p className={`${isRail ? 'line-clamp-2' : 'line-clamp-2 min-h-0 flex-1'} mt-1 overflow-hidden text-sm leading-relaxed text-gray-600 dark:text-gray-300`}>
             {template.prompt}
           </p>
 
           <div className="mt-1.5 flex min-w-0 gap-1.5 overflow-x-auto whitespace-nowrap pt-0.5 hide-scrollbar mask-edge-r">
-            <span className="flex-shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600 dark:bg-white/[0.04] dark:text-gray-300">
-              {template.category}
-            </span>
+            {!isRail && (
+              <span className="flex-shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600 dark:bg-white/[0.04] dark:text-gray-300">
+                {template.category}
+              </span>
+            )}
             <span className="flex-shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600 dark:bg-white/[0.04] dark:text-gray-300">
               {template.ratio}
             </span>

@@ -51,4 +51,18 @@ describe('TemplateCard', () => {
 
     expect(markup).not.toContain('需参考图')
   })
+
+  it('renders rail variant for the Agent template sidebar', () => {
+    const markup = renderToStaticMarkup(
+      <TemplateCard template={template} onUse={vi.fn()} variant="rail" />,
+    )
+
+    expect(markup).toContain(template.title)
+    expect(markup).toContain(template.prompt)
+    expect(markup).toContain(template.ratio)
+    expect(markup).toContain(template.size)
+    expect(markup).toContain('需参考图')
+    expect(markup).toContain('使用模板')
+    expect(markup).not.toContain(template.category)
+  })
 })
