@@ -7,9 +7,13 @@
     "dev": "vite",
     "mock:api": "node scripts/mock-image-api.mjs",
     "build": "tsc -b && vite build",
+    "build:gateway": "npm --prefix gateway run build",
+    "build:all": "npm run build && npm run build:gateway",
     "deploy:cf": "npm run build && wrangler deploy",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:gateway": "npm --prefix gateway test",
+    "test:all": "npm run test && npm run test:gateway",
     "test:watch": "vitest"
   },
   "dependencies": {

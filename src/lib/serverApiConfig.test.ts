@@ -4,11 +4,14 @@ import { DEFAULT_SETTINGS } from './apiProfiles'
 import {
   getEffectiveApiProfile,
   getEffectiveSettings,
+  getRestrictedAgentBasePath,
   getRuntimeConfigState,
   getServerApiProxyPath,
   getServerManagedApiOptions,
   getServerManagedApiProfile,
   initializeRuntimeConfig,
+  isRestrictedAgentEnabled,
+  isRestrictedAgentOnly,
   isServerApiConfigEnabled,
   isServerApiConfigUsable,
   loadRuntimeConfig,
@@ -132,6 +135,34 @@ describe('initializeRuntimeConfig', () => {
       apiProxy: true,
       responseFormatB64Json: true,
     })
+  })
+
+  it('parses restricted Agent config while server API is disabled', () => {
+    const state = initializeRuntimeConfig({
+      version: 1,
+      serverApi: { enabled: false },
+      restrictedAgent: {
+        enabled: true,
+        basePath: '/agent-api/v1',
+        agentOnly: true,
+      },
+    })
+
+    expect(state).toEqual({
+      status: 'ready',
+      config: {
+        version: 1,
+        serverApi: { enabled: false },
+        restrictedAgent: {
+          enabled: true,
+          basePath: '/agent-api/v1',
+          agentOnly: true,
+        },
+      },
+    })
+    expect(isRestrictedAgentEnabled()).toBe(true)
+    expect(isRestrictedAgentOnly()).toBe(true)
+    expect(getRestrictedAgentBasePath()).toBe('/agent-api/v1')
   })
 
   it('uses deployment-provided API mode options and allows safe custom models by default', () => {
@@ -306,6 +337,12 @@ describe('initializeRuntimeConfig', () => {
       { ...enabledRuntimeConfig, serverApi: { ...enabledRuntimeConfig.serverApi, proxyPath: '/api-proxy/管理员' } },
       { ...enabledRuntimeConfig, serverApi: { ...enabledRuntimeConfig.serverApi, apiKey: 'must-not-be-public' } },
       { ...enabledRuntimeConfig, upstreamUrl: 'https://upstream.example' },
+      { version: 1, serverApi: { enabled: false }, restrictedAgent: true },
+      { version: 1, serverApi: { enabled: false }, restrictedAgent: { enabled: 'true', basePath: '/agent-api/v1', agentOnly: true } },
+      { version: 1, serverApi: { enabled: false }, restrictedAgent: { enabled: true, basePath: '/other', agentOnly: true } },
+      { version: 1, serverApi: { enabled: false }, restrictedAgent: { enabled: false, basePath: '/agent-api/v1', agentOnly: true } },
+      { version: 1, serverApi: { enabled: false }, restrictedAgent: { enabled: true, basePath: '/agent-api/v1', agentOnly: true, apiKey: 'secret' } },
+      { ...enabledRuntimeConfig, restrictedAgent: { enabled: true, basePath: '/agent-api/v1', agentOnly: true } },
     ]
 
     for (const input of invalidInputs) {

@@ -616,6 +616,7 @@ export function getCodexCliPromptKey(settings: AppSettings): string {
 }
 
 function isOpenAITask(task: TaskRecord) {
+  if (task.origin === 'restricted-agent') return false
   return (task.apiProvider ?? 'openai') !== 'fal'
 }
 
@@ -634,6 +635,7 @@ export function markInterruptedOpenAIRunningTasks(tasks: TaskRecord[], now = Dat
   const recoveryRestrictionError = getApiRecoveryRestrictionError()
   const interruptedTasks: TaskRecord[] = []
   const updatedTasks = tasks.map((task) => {
+    if (task.origin === 'restricted-agent') return task
     const incompatibleRecoveryTask = recoveryRestrictionError !== null && (
       task.status === 'running' || task.falRecoverable || task.customRecoverable
     ) && (
@@ -1447,6 +1449,10 @@ export function updateTaskInStore(taskId: string, patch: Partial<TaskRecord>) {
 
 /** 重试失败的任务：创建新任务并执行 */
 export async function retryTask(task: TaskRecord) {
+  if (task.origin === 'restricted-agent') {
+    useStore.getState().showToast('受限 Agent 任务不能直接重试，请重新生成计划并确认', 'info')
+    return
+  }
   const { settings } = useStore.getState()
   if (getRuntimeConfigState().status !== 'ready') {
     useStore.getState().showToast('服务端 API 配置不可用，请联系部署管理员', 'error')

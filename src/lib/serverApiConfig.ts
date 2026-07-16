@@ -3,6 +3,7 @@ import { getActiveApiProfile } from './apiProfiles'
 
 export const SERVER_MANAGED_PROFILE_ID = 'server-managed-openai'
 export const DEFAULT_SERVER_API_PROXY_PATH = '/api-proxy'
+export const DEFAULT_RESTRICTED_AGENT_BASE_PATH = '/agent-api/v1'
 export const SERVER_API_CONFIG_UNAVAILABLE_MESSAGE = '服务端 API 配置不可用，请联系部署管理员'
 
 interface DisabledServerApiConfig {
@@ -23,9 +24,16 @@ interface EnabledServerApiConfig {
   proxyPath: string
 }
 
+interface RestrictedAgentRuntimeConfig {
+  enabled: boolean
+  basePath: string
+  agentOnly: boolean
+}
+
 export interface PublicRuntimeConfig {
   version: 1
   serverApi: DisabledServerApiConfig | EnabledServerApiConfig
+  restrictedAgent?: RestrictedAgentRuntimeConfig
 }
 
 export type RuntimeConfigState =
@@ -33,7 +41,8 @@ export type RuntimeConfigState =
   | { status: 'ready'; config: PublicRuntimeConfig }
   | { status: 'error'; error: string }
 
-const TOP_LEVEL_KEYS = new Set(['version', 'serverApi'])
+const TOP_LEVEL_KEYS = new Set(['version', 'serverApi', 'restrictedAgent'])
+const RESTRICTED_AGENT_KEYS = new Set(['enabled', 'basePath', 'agentOnly'])
 const SERVER_API_KEYS = new Set([
   'enabled',
   'provider',
@@ -84,6 +93,21 @@ function normalizeProxyPath(value: unknown): string {
   return `/${segments.join('/')}`
 }
 
+function normalizeRestrictedAgentConfig(value: unknown): RestrictedAgentRuntimeConfig | undefined {
+  if (value === undefined) return undefined
+  if (!isRecord(value)) throw new Error('restrictedAgent 必须是对象')
+  assertAllowedKeys(value, RESTRICTED_AGENT_KEYS, 'restrictedAgent')
+  if (typeof value.enabled !== 'boolean') throw new Error('restrictedAgent.enabled 必须是布尔值')
+  if (typeof value.agentOnly !== 'boolean') throw new Error('restrictedAgent.agentOnly 必须是布尔值')
+  if (value.agentOnly && !value.enabled) throw new Error('restrictedAgent.agentOnly 只能在启用 Agent 时使用')
+
+  const basePath = value.basePath === undefined ? DEFAULT_RESTRICTED_AGENT_BASE_PATH : value.basePath
+  if (typeof basePath !== 'string' || basePath.trim() !== DEFAULT_RESTRICTED_AGENT_BASE_PATH) {
+    throw new Error(`restrictedAgent.basePath 必须是 ${DEFAULT_RESTRICTED_AGENT_BASE_PATH}`)
+  }
+  return { enabled: value.enabled, basePath: DEFAULT_RESTRICTED_AGENT_BASE_PATH, agentOnly: value.agentOnly }
+}
+
 function normalizeModelId(value: unknown, label: string): string {
   if (typeof value !== 'string' || !value.trim()) {
     throw new Error(`${label} 不能为空`)
@@ -131,12 +155,16 @@ function parsePublicRuntimeConfig(raw: unknown): PublicRuntimeConfig {
   assertAllowedKeys(raw, TOP_LEVEL_KEYS, '运行时配置')
   if (raw.version !== 1) throw new Error('不支持的运行时配置版本')
   if (!isRecord(raw.serverApi)) throw new Error('serverApi 配置缺失')
+  const restrictedAgent = normalizeRestrictedAgentConfig(raw.restrictedAgent)
 
   const serverApi = raw.serverApi
   assertAllowedKeys(serverApi, SERVER_API_KEYS, 'serverApi')
   if (typeof serverApi.enabled !== 'boolean') throw new Error('serverApi.enabled 必须是布尔值')
+  if (serverApi.enabled && restrictedAgent?.enabled) {
+    throw new Error('serverApi 与 restrictedAgent 不能同时启用')
+  }
   if (!serverApi.enabled) {
-    return { version: 1, serverApi: { enabled: false } }
+    return { version: 1, serverApi: { enabled: false }, ...(restrictedAgent ? { restrictedAgent } : {}) }
   }
 
   if (serverApi.provider !== 'openai') throw new Error('serverApi.provider 必须是 openai')
@@ -177,6 +205,7 @@ function parsePublicRuntimeConfig(raw: unknown): PublicRuntimeConfig {
       timeoutSeconds: serverApi.timeoutSeconds,
       proxyPath: normalizeProxyPath(serverApi.proxyPath),
     },
+    ...(restrictedAgent ? { restrictedAgent } : {}),
   }
 }
 
@@ -214,6 +243,22 @@ export function isServerApiConfigEnabled(): boolean {
 
 export function isServerApiConfigUsable(): boolean {
   return isServerApiConfigEnabled()
+}
+
+export function isRestrictedAgentEnabled(): boolean {
+  return runtimeState.status === 'ready' && runtimeState.config.restrictedAgent?.enabled === true
+}
+
+export function isRestrictedAgentOnly(): boolean {
+  return runtimeState.status === 'ready'
+    && runtimeState.config.restrictedAgent?.enabled === true
+    && runtimeState.config.restrictedAgent.agentOnly
+}
+
+export function getRestrictedAgentBasePath(): string {
+  return runtimeState.status === 'ready'
+    ? runtimeState.config.restrictedAgent?.basePath ?? DEFAULT_RESTRICTED_AGENT_BASE_PATH
+    : DEFAULT_RESTRICTED_AGENT_BASE_PATH
 }
 
 export function getServerApiProxyPath(): string {

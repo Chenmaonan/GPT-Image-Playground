@@ -21,6 +21,8 @@ services:
       SERVER_API_CODEX_CLI: ${SERVER_API_CODEX_CLI:-false}
       SERVER_API_RESPONSE_FORMAT_B64_JSON: ${SERVER_API_RESPONSE_FORMAT_B64_JSON:-false}
       SERVER_API_TIMEOUT_SECONDS: ${SERVER_API_TIMEOUT_SECONDS:-600}
+      RESTRICTED_AGENT_ENABLED: ${RESTRICTED_AGENT_ENABLED:-false}
+      AGENT_REQUEST_TIMEOUT_SECONDS: ${AGENT_REQUEST_TIMEOUT_SECONDS:-600}
     expose:
       - "80"
     healthcheck:
@@ -29,3 +31,60 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+
+  agent-gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    image: gpt-image-playground-agent-gateway:latest
+    restart: unless-stopped
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      AGENT_HOST: 0.0.0.0
+      AGENT_PORT: 3000
+      AGENT_DATA_DIR: /data
+      RESTRICTED_AGENT_ENABLED: ${RESTRICTED_AGENT_ENABLED:-false}
+      AGENT_PUBLIC_ORIGIN: ${AGENT_PUBLIC_ORIGIN:-}
+      AGENT_SESSION_SECRET: ${AGENT_SESSION_SECRET:-}
+      AGENT_UPSTREAM_BASE_URL: ${AGENT_UPSTREAM_BASE_URL:-https://api.openai.com/v1}
+      AGENT_API_KEY: ${AGENT_API_KEY:-}
+      AGENT_PLANNER_MODEL: ${AGENT_PLANNER_MODEL:-gpt-5.5}
+      AGENT_IMAGE_MODEL: ${AGENT_IMAGE_MODEL:-gpt-image-2}
+      AGENT_PLAN_TTL_SECONDS: ${AGENT_PLAN_TTL_SECONDS:-900}
+      AGENT_ASSET_TTL_SECONDS: ${AGENT_ASSET_TTL_SECONDS:-86400}
+      AGENT_MAX_REFERENCE_IMAGES: ${AGENT_MAX_REFERENCE_IMAGES:-16}
+      AGENT_MAX_FILE_BYTES: ${AGENT_MAX_FILE_BYTES:-20971520}
+      AGENT_MAX_UPLOAD_BYTES: ${AGENT_MAX_UPLOAD_BYTES:-134217728}
+      AGENT_MAX_IMAGE_PIXELS: ${AGENT_MAX_IMAGE_PIXELS:-40000000}
+      AGENT_MAX_OUTPUT_IMAGES: ${AGENT_MAX_OUTPUT_IMAGES:-4}
+      AGENT_MAX_QUEUE: ${AGENT_MAX_QUEUE:-10}
+      AGENT_MAX_CONCURRENCY: ${AGENT_MAX_CONCURRENCY:-2}
+      AGENT_PLAN_RATE_PER_MINUTE: ${AGENT_PLAN_RATE_PER_MINUTE:-5}
+      AGENT_EXECUTE_RATE_PER_MINUTE: ${AGENT_EXECUTE_RATE_PER_MINUTE:-2}
+      AGENT_IMAGES_RATE_PER_HOUR: ${AGENT_IMAGES_RATE_PER_HOUR:-20}
+      AGENT_PLANNER_TIMEOUT_MS: ${AGENT_PLANNER_TIMEOUT_MS:-60000}
+      AGENT_EXECUTOR_TIMEOUT_MS: ${AGENT_EXECUTOR_TIMEOUT_MS:-180000}
+      AGENT_LOG_LEVEL: ${AGENT_LOG_LEVEL:-info}
+    expose:
+      - "3000"
+    volumes:
+      - agent-gateway-data:/data
+      - ./deploy/run-agent-gateway.sh:/usr/local/bin/run-agent-gateway.sh:ro
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    stop_grace_period: 30s
+    command: ["/bin/sh", "/usr/local/bin/run-agent-gateway.sh"]
+
+volumes:
+  agent-gateway-data:

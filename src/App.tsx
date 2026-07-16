@@ -3,6 +3,8 @@ import { initStore } from './store'
 import { useStore } from './store'
 import { buildSettingsFromUrlParams, clearUrlSettingParams, hasUrlSettingParams } from './lib/urlSettings'
 import { useDockerApiUrlMigrationNotice } from './hooks/useDockerApiUrlMigrationNotice'
+import { useRestrictedAgentStore } from './restrictedAgentStore'
+import { isRestrictedAgentEnabled, isRestrictedAgentOnly } from './lib/serverApiConfig'
 import Header from './components/Header'
 import SearchBar from './components/SearchBar'
 import TaskGrid from './components/TaskGrid'
@@ -18,7 +20,10 @@ import ImageContextMenu from './components/ImageContextMenu'
 
 export default function App() {
   const setSettings = useStore((s) => s.setSettings)
-  const [workspaceMode, setWorkspaceMode] = useState<'gallery' | 'agent'>('gallery')
+  const recoverRestrictedAgent = useRestrictedAgentStore((s) => s.recover)
+  const restrictedAgentEnabled = isRestrictedAgentEnabled()
+  const restrictedAgentOnly = isRestrictedAgentOnly()
+  const [workspaceMode, setWorkspaceMode] = useState<'gallery' | 'agent'>(() => restrictedAgentOnly ? 'agent' : 'gallery')
   const [activeAgentTaskId, setActiveAgentTaskId] = useState<string | null>(null)
   useDockerApiUrlMigrationNotice()
 
@@ -36,8 +41,11 @@ export default function App() {
       window.history.replaceState(null, '', nextUrl)
     }
 
-    initStore()
-  }, [setSettings])
+    void (async () => {
+      await initStore()
+      await recoverRestrictedAgent(useStore.getState().tasks)
+    })()
+  }, [recoverRestrictedAgent, setSettings])
 
   useEffect(() => {
     const preventPageImageDrag = (e: DragEvent) => {
@@ -59,7 +67,7 @@ export default function App() {
             ? 'w-full max-w-[96rem] 2xl:max-w-[108rem]'
             : 'max-w-7xl'
         }`}>
-          <div data-no-drag-select className="mt-6 flex justify-center">
+          {restrictedAgentEnabled && !restrictedAgentOnly && <div data-no-drag-select className="mt-6 flex justify-center">
             <div className="inline-flex rounded-2xl border border-gray-200 bg-white p-1 shadow-sm dark:border-white/[0.08] dark:bg-gray-900" role="tablist" aria-label="工作区模式">
               <button
                 type="button"
@@ -88,7 +96,7 @@ export default function App() {
                 Agent
               </button>
             </div>
-          </div>
+          </div>}
           {workspaceMode === 'gallery' ? (
             <>
               <SearchBar />

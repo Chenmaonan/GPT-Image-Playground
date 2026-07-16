@@ -1,5 +1,8 @@
 node_modules/
 dist/
+gateway/node_modules/
+gateway/dist/
+gateway/data/
 dev-proxy.config.json
 .wrangler/
 .env

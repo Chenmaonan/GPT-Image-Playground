@@ -69,6 +69,11 @@
 - **参考图与遮罩**：支持上传最多 16 张参考图（支持剪贴板和拖拽）。内置可视化遮罩编辑器，自动预处理以符合官方分辨率限制。
 - **批量与迭代**：支持单次多图生成；一键将满意结果转为参考图，无缝开启下一轮修改。
 
+### 🤖 可确认的受限 Agent
+- **两阶段执行**：Agent 先输出最终 Prompt、参数、参考图和执行步骤，只有用户明确确认后才生成图片。
+- **服务端权限边界**：Planner 不持有工具，Executor 只执行服务端冻结计划；浏览器不能指定模型、上游地址、工具或原始请求体。
+- **内网安全控制**：提供不可重复执行的计划、输入哈希、会话与 CSRF 校验、额度和并发限制、SQLite 审计及断线恢复。
+
 ### ⚙️ 精细化参数追踪
 - **智能尺寸控制**：提供 1K/2K/4K 快速预设，自定义宽高时会自动规整至模型安全范围（16 的倍数、总像素校验等）。
 - **实际参数对比**：自动提取 API 响应中真实生效的尺寸、质量、耗时以及**模型改写后的提示词**，与你的请求参数高亮对比。支持定制化的参数列表横向平滑滚动体验。
@@ -149,7 +154,29 @@ $env:VITE_DEFAULT_API_URL="https://api.openai.com/v1"; npm run deploy:cf
 <details>
 <summary><strong>🐳 方式三：Docker 部署</strong></summary>
 
-Docker 部署支持在容器启动时注入配置，并提供两种互斥模式：默认关闭的兼容模式，以及由服务端锁定 OpenAI 兼容配置的统一模式。你可以使用本仓库工作流发布的镜像，或在本地构建镜像。
+Docker 部署支持三种互斥运行方式：兼容模式、服务端统一配置，以及必须先确认计划的受限 Agent 模式。你可以使用本仓库工作流发布的镜像，或在本地构建镜像。
+
+**受限 Agent 模式（可信内网推荐）：**
+
+受限模式使用独立 `agent-gateway` 容器。Planner 只生成结构化计划，用户确认后 Executor 才调用固定 Images API。启用后 Nginx 会强制移除通用 `/api-proxy`，避免浏览器绕过确认流程。
+
+启用时至少配置：
+
+```env
+RESTRICTED_AGENT_ENABLED=true
+AGENT_PUBLIC_ORIGIN=https://你的站点域名
+AGENT_SESSION_SECRET=至少32字符的随机字符串
+AGENT_UPSTREAM_BASE_URL=https://api.openai.com/v1
+AGENT_API_KEY=sk-your-server-key
+AGENT_PLANNER_MODEL=你的规划模型
+AGENT_IMAGE_MODEL=你的图片模型
+```
+
+关键限制均可通过 `AGENT_*` 环境变量调整，默认包括：计划 15 分钟过期、最多 16 张参考图、128 MiB 上传、每次 1–4 张输出、全局并发 2、队列 10。完整变量和默认值见 [.env.example](.env.example)。
+
+Gateway 只在 Compose 内网暴露 `3000`，图片和 SQLite 数据保存在 `agent-gateway-data` volume 中。受限模式不适用于纯静态托管，也不应与 `SERVER_API_CONFIG_ENABLED=true` 同时开启。Gateway 不健康时 Agent 会失败关闭，不会回退到旧代理。
+
+受限模式使用服务端固定 Images API 执行器，上游必须支持 `b64_json` 图片结果；不接受远程结果 URL，以避免 Gateway 代替用户抓取外部资源。
 
 **兼容模式变量（`SERVER_API_CONFIG_ENABLED=false`，默认）：**
 
@@ -236,6 +263,8 @@ services:
 3. 如需服务端统一配置，在 Environment 中填入 `.env.example` 对应变量，并将 `SERVER_API_CONFIG_ENABLED` 设为 `true`。
 4. `SERVER_API_KEY` 只能放在 Dokploy Environment 中，不要写入仓库文件。
 
+如需受限 Agent，在 Dokploy 中设置 `RESTRICTED_AGENT_ENABLED=true` 和全部必填 `AGENT_*` 变量。域名仍绑定前端 `gpt-image-playground:80`，不要单独暴露 Gateway 端口。
+
 回滚时将 `SERVER_API_CONFIG_ENABLED=false` 并重启容器，即可恢复原有 `DEFAULT_API_URL` / `API_PROXY_URL` / `ENABLE_API_PROXY` / `LOCK_API_PROXY` 行为。使用 `latest` 标签时，重新拉取镜像并重启即可更新（如 `docker compose pull && docker compose up -d`）；生产环境建议固定版本标签。
 
 </details>
@@ -276,6 +305,20 @@ npm run mock:api
 
 ```bash
 npm run build
+```
+
+Gateway 使用独立依赖和构建目录：
+
+```bash
+npm --prefix gateway ci
+npm run test:gateway
+npm run build:gateway
+```
+
+本地联调受限模式建议使用 Docker Compose profile，避免在开发服务器中复制生产安全边界：
+
+```bash
+docker compose up --build
 ```
 
 构建输出的文件位于 `dist/` 目录下，可将其部署至任何静态文件服务器（如普通 Nginx、GitHub Pages、Netlify 等）。
@@ -383,6 +426,8 @@ JSON 结构示例：
   <a href="https://vite.dev/"><img src="https://img.shields.io/badge/Vite-B73BFE?style=for-the-badge&logo=vite&logoColor=FFD62E" alt="Vite" /></a>
   <a href="https://tailwindcss.com/"><img src="https://img.shields.io/badge/Tailwind_CSS_3-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white" alt="Tailwind CSS 3" /></a>
   <a href="https://zustand.docs.pmnd.rs/"><img src="https://img.shields.io/badge/Zustand-764ABC?style=for-the-badge&logo=react&logoColor=white" alt="Zustand" /></a>
+  <a href="https://fastify.dev/"><img src="https://img.shields.io/badge/Fastify-000000?style=for-the-badge&logo=fastify&logoColor=white" alt="Fastify" /></a>
+  <a href="https://sqlite.org/"><img src="https://img.shields.io/badge/SQLite-003B57?style=for-the-badge&logo=sqlite&logoColor=white" alt="SQLite" /></a>
   <br>
   <br>
 </div>

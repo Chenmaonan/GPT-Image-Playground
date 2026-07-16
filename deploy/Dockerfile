@@ -1,5 +1,5 @@
 # ---- Build stage ----
-FROM --platform=$BUILDPLATFORM node:20-alpine AS build
+FROM --platform=$BUILDPLATFORM node:22-alpine AS build
 
 WORKDIR /app
 
@@ -35,6 +35,8 @@ ENV SERVER_API_ALLOW_CUSTOM_MODEL=true
 ENV SERVER_API_CODEX_CLI=false
 ENV SERVER_API_RESPONSE_FORMAT_B64_JSON=false
 ENV SERVER_API_TIMEOUT_SECONDS=600
+ENV RESTRICTED_AGENT_ENABLED=false
+ENV AGENT_REQUEST_TIMEOUT_SECONDS=600
 
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY deploy/nginx.conf /etc/nginx/templates/default.conf.template

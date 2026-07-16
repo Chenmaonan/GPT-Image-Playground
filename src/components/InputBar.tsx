@@ -16,7 +16,7 @@ import { normalizeImageSize } from '../lib/size'
 import { createMaskPreviewDataUrl } from '../lib/canvasImage'
 import { dismissAllTooltips } from '../lib/tooltipDismiss'
 import { getSafeBoundingClientRect } from '../lib/domRect'
-import { storeBackedAgentExecutor } from '../lib/agentExecutor'
+import { useRestrictedAgentStore } from '../restrictedAgentStore'
 import Select from './Select'
 import SizePickerModal from './SizePickerModal'
 import ViewportTooltip from './ViewportTooltip'
@@ -303,6 +303,8 @@ export default function InputBar({ onTaskSubmitted, layout = 'default' }: InputB
   const filterStatus = useStore((s) => s.filterStatus)
   const filterFavorite = useStore((s) => s.filterFavorite)
   const searchQuery = useStore((s) => s.searchQuery)
+  const agentFlowPhase = useRestrictedAgentStore((s) => s.phase)
+  const createAgentPlan = useRestrictedAgentStore((s) => s.createPlanFromCurrentInput)
 
   const filteredTasks = useMemo(() => {
     return filterAndSortTasks(tasks, { searchQuery, filterStatus, filterFavorite })
@@ -472,35 +474,28 @@ export default function InputBar({ onTaskSubmitted, layout = 'default' }: InputB
       : [...settings.profiles, activeProfile]
     return normalizeSettings({ ...settings, profiles, activeProfileId: activeProfile.id })
   }, [activeProfile, currentActiveProfile.id, serverManaged, settings])
-  const hasSubmitApiConfig = serverManaged ? serverConfigUsable : Boolean(activeProfile.apiKey)
-  const canSubmit = Boolean(prompt.trim() && hasSubmitApiConfig)
+  const isAgentLayout = layout === 'agent'
+  const hasSubmitApiConfig = isAgentLayout ? true : (serverManaged ? serverConfigUsable : Boolean(activeProfile.apiKey))
+  const agentBusy = agentFlowPhase === 'planning' || agentFlowPhase === 'confirming' || agentFlowPhase === 'executing'
+  const canSubmit = Boolean(prompt.trim() && hasSubmitApiConfig && !agentBusy)
   const handleSubmit = useCallback(async () => {
-    if (layout === 'agent' && (activeProfile.provider !== 'openai' || activeProfile.apiMode !== 'responses')) {
-      showToast('Agent 模式需要使用 OpenAI 兼容的 Responses API 配置', 'error')
-      if (!serverManaged) setShowSettings(true)
+    if (layout === 'agent') {
+      await createAgentPlan()
       return
     }
 
-    const taskId = layout === 'agent'
-      ? await storeBackedAgentExecutor.submit({
-        prompt: prompt.trim(),
-        inputImageIds: inputImages.map((image) => image.id),
-        params,
-        stream: settings.agentStreaming,
-        imageCount: settings.agentImageCount,
-      })
-      : await submitTask()
+    const taskId = await submitTask()
     if (taskId) onTaskSubmitted?.(taskId)
-  }, [activeProfile.apiMode, activeProfile.provider, inputImages, layout, onTaskSubmitted, params, prompt, serverManaged, setShowSettings, settings.agentImageCount, settings.agentStreaming, showToast])
+  }, [createAgentPlan, layout, onTaskSubmitted])
   const missingApiConfigMessage = serverManaged
     ? '服务端 API 配置不可用，请联系部署管理员'
     : '尚未完成 API 配置，请在右上角设置中进行'
   const missingApiConfigTitle = serverManaged ? missingApiConfigMessage : '请先配置 API'
   const activeProvider = activeProfile.provider
-  const isFalProvider = activeProvider === 'fal'
-  const moderationDisabled = activeProfile.apiMode === 'responses' || isFalProvider
+  const isFalProvider = !isAgentLayout && activeProvider === 'fal'
+  const moderationDisabled = isAgentLayout || activeProfile.apiMode === 'responses' || isFalProvider
   const compressionDisabled = params.output_format === 'png' || isFalProvider
-  const outputImageLimit = getOutputImageLimitForSettings(effectiveSettings)
+  const outputImageLimit = isAgentLayout ? 4 : getOutputImageLimitForSettings(effectiveSettings)
   const isFalTextToImage = isFalProvider && inputImages.length === 0
   const nLimitHintText = isFalProvider
     ? `fal.ai 最大请求数量为 ${outputImageLimit}`
@@ -1916,7 +1911,7 @@ export default function InputBar({ onTaskSubmitted, layout = 'default' }: InputB
                         ? `bg-gray-300 dark:bg-white/[0.06] text-white ${serverManaged ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`
                         : 'bg-blue-500 text-white hover:bg-blue-600 disabled:bg-gray-300 dark:disabled:bg-white/[0.04] disabled:opacity-50 disabled:cursor-not-allowed'
                     }`}
-                    title={hasSubmitApiConfig ? (maskDraft ? '遮罩编辑 (Ctrl+Enter)' : '生成 (Ctrl+Enter)') : missingApiConfigTitle}
+                    title={hasSubmitApiConfig ? (isAgentLayout ? '生成执行计划 (Ctrl+Enter)' : maskDraft ? '遮罩编辑 (Ctrl+Enter)' : '生成 (Ctrl+Enter)') : missingApiConfigTitle}
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
@@ -1973,12 +1968,12 @@ export default function InputBar({ onTaskSubmitted, layout = 'default' }: InputB
                         ? `bg-gray-300 dark:bg-white/[0.06] text-white ${serverManaged ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`
                         : 'bg-blue-500 text-white hover:bg-blue-600 disabled:bg-gray-300 dark:disabled:bg-white/[0.04] disabled:opacity-50 disabled:cursor-not-allowed'
                     }`}
-                    title={hasSubmitApiConfig ? (maskDraft ? '遮罩编辑' : '生成图像') : missingApiConfigTitle}
+                    title={hasSubmitApiConfig ? (isAgentLayout ? '生成执行计划' : maskDraft ? '遮罩编辑' : '生成图像') : missingApiConfigTitle}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
                     </svg>
-                    {maskDraft ? '遮罩编辑' : '生成图像'}
+                    {isAgentLayout ? (agentFlowPhase === 'planning' ? '规划中…' : '生成计划') : maskDraft ? '遮罩编辑' : '生成图像'}
                   </button>
                 </div>
               </div>

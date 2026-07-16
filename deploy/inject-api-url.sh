@@ -29,7 +29,7 @@ fi
 # 布尔值、枚举和数字也经过严格校验。使用固定格式原子写入，避免任意 JSON 拼接。
 RUNTIME_CONFIG_PATH=/usr/share/nginx/html/runtime-config.json
 RUNTIME_CONFIG_TMP=${RUNTIME_CONFIG_PATH}.tmp
-if ! printf '{\n  "version": 1,\n  "serverApi": {\n    "enabled": %s,\n    "provider": "openai",\n    "model": "%s",\n    "apiMode": "%s",\n    "modelOptions": %s,\n    "apiModeOptions": %s,\n    "allowCustomModel": %s,\n    "codexCli": %s,\n    "responseFormatB64Json": %s,\n    "timeoutSeconds": %s,\n    "proxyPath": "/api-proxy"\n  }\n}\n' \
+if ! printf '{\n  "version": 1,\n  "serverApi": {\n    "enabled": %s,\n    "provider": "openai",\n    "model": "%s",\n    "apiMode": "%s",\n    "modelOptions": %s,\n    "apiModeOptions": %s,\n    "allowCustomModel": %s,\n    "codexCli": %s,\n    "responseFormatB64Json": %s,\n    "timeoutSeconds": %s,\n    "proxyPath": "/api-proxy"\n  },\n  "restrictedAgent": {\n    "enabled": %s,\n    "basePath": "/agent-api/v1",\n    "agentOnly": %s\n  }\n}\n' \
     "$RUNTIME_SERVER_API_ENABLED" \
     "$RUNTIME_SERVER_API_MODEL" \
     "$RUNTIME_SERVER_API_MODE" \
@@ -39,6 +39,8 @@ if ! printf '{\n  "version": 1,\n  "serverApi": {\n    "enabled": %s,\n    "prov
     "$RUNTIME_SERVER_API_CODEX_CLI" \
     "$RUNTIME_SERVER_API_RESPONSE_FORMAT_B64_JSON" \
     "$RUNTIME_SERVER_API_TIMEOUT_SECONDS" \
+    "$RUNTIME_RESTRICTED_AGENT_ENABLED" \
+    "$RUNTIME_RESTRICTED_AGENT_ENABLED" \
     2>/dev/null > "$RUNTIME_CONFIG_TMP"
 then
     container_config_error 'failed to write runtime configuration'
@@ -61,8 +63,16 @@ replace_asset_placeholder '__VITE_API_PROXY_AVAILABLE_PLACEHOLDER__' "$API_PROXY
 replace_asset_placeholder '__VITE_API_PROXY_LOCKED_PLACEHOLDER__' "$API_PROXY_LOCKED"
 replace_asset_placeholder '__VITE_DOCKER_DEPLOYMENT_PLACEHOLDER__' 'true'
 replace_asset_placeholder '__VITE_DOCKER_LEGACY_API_URL_USED_PLACEHOLDER__' "$DOCKER_LEGACY_API_URL_USED"
-# 检查是否启用了 API 代理；关闭时移除完整代理配置块。
-if [ "$ENABLE_API_PROXY" != "true" ]
+# 受限模式未启用时完全移除 Gateway 路由；缺失或非法开关不能意外暴露入口。
+if [ "$RESTRICTED_AGENT_ENABLED" != "true" ]
+then
+    if ! sed -i '/# BEGIN RESTRICTED AGENT/,/# END RESTRICTED AGENT/d' /etc/nginx/conf.d/default.conf >/dev/null 2>&1; then
+        container_config_error 'failed to apply restricted Agent configuration'
+    fi
+fi
+
+# API proxy 仅在旧模式显式启用。restricted 模式始终删除整个旁路配置块。
+if [ "$ENABLE_API_PROXY" != "true" ] || [ "$RESTRICTED_AGENT_ENABLED" = "true" ]
 then
     if ! sed -i '/# BEGIN API PROXY/,/# END API PROXY/d' /etc/nginx/conf.d/default.conf >/dev/null 2>&1; then
         container_config_error 'failed to apply API proxy configuration'

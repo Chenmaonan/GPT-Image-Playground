@@ -174,6 +174,123 @@ export interface TaskRecord {
   elapsed: number | null
   /** 是否收藏 */
   isFavorite?: boolean
+  /** 任务入口。旧任务未设置时按 gallery 处理。 */
+  origin?: 'gallery' | 'restricted-agent'
+  /** 受限 Agent 服务端计划 ID。 */
+  agentPlanId?: string
+  /** 受限 Agent 服务端执行 ID，用于刷新后恢复状态。 */
+  agentExecutionId?: string
+  /** 用户在规划阶段提交的原始需求。 */
+  agentOriginalRequest?: string
+  /** 用户实际确认的不可变计划快照。 */
+  agentPlanSnapshot?: RestrictedAgentPlan
+}
+
+// ===== 受限 Agent Gateway =====
+
+export type RestrictedAgentPlanStatus =
+  | 'awaiting_confirmation'
+  | 'queued'
+  | 'executing'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'failed_unknown'
+  | 'expired'
+
+export type RestrictedAgentExecutionStatus =
+  | 'queued'
+  | 'executing'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'failed_unknown'
+
+export interface RestrictedAgentPlanStep {
+  title: string
+  operation: 'generate' | 'edit'
+}
+
+export interface RestrictedAgentPlanGeneration {
+  exactPrompt: string
+  action: 'generate' | 'edit'
+  size: string
+  quality: TaskParams['quality']
+  outputFormat: TaskParams['output_format']
+  outputCompression: number | null
+  imageCount: number
+}
+
+export interface RestrictedAgentPlanInput {
+  assetId: string
+  role: 'reference' | 'mask_target' | 'mask'
+  sha256: string
+  mimeType: string
+  width: number
+  height: number
+}
+
+export interface RestrictedAgentPlan {
+  id: string
+  version: number
+  status: RestrictedAgentPlanStatus
+  expiresAt: string
+  originalRequest: string
+  summary: string
+  steps: RestrictedAgentPlanStep[]
+  generation: RestrictedAgentPlanGeneration
+  inputs: RestrictedAgentPlanInput[]
+  assumptions: string[]
+  warnings: string[]
+  policyVersion: string
+}
+
+export interface RestrictedAgentOutputAsset {
+  id: string
+  url: string
+  mimeType: string
+  sha256: string
+  width: number
+  height: number
+  byteSize: number
+}
+
+export interface RestrictedAgentExecution {
+  id: string
+  planId: string
+  status: RestrictedAgentExecutionStatus
+  cancelRequested: boolean
+  error: { code: string; message: string } | null
+  outputAssets: RestrictedAgentOutputAsset[]
+  createdAt: string
+  startedAt: string | null
+  completedAt: string | null
+  updatedAt: string
+}
+
+export interface RestrictedAgentCapabilities {
+  enabled: boolean
+  csrfToken: string
+  policyVersion?: string
+  limits?: {
+    maxReferenceImages?: number
+    maxFileBytes?: number
+    maxUploadBytes?: number
+    maxImagePixels?: number
+    maxOutputImages?: number
+    planTtlSeconds?: number
+    assetTtlSeconds?: number
+    maxQueue?: number
+    maxConcurrency?: number
+    planRatePerMinute?: number
+    executeRatePerMinute?: number
+    imagesRatePerHour?: number
+  }
+  parameters?: {
+    sizes: string[]
+    qualities: TaskParams['quality'][]
+    outputFormats: TaskParams['output_format'][]
+  }
 }
 
 // ===== IndexedDB 存储的图片 =====

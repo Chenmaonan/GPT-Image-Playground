@@ -364,9 +364,11 @@ export default function TaskDetailContent({
           <button type="button" className="rounded-xl bg-gray-50 px-3 py-2 text-sm font-medium text-gray-500 hover:bg-yellow-50 hover:text-yellow-500 dark:bg-white/[0.04]" onClick={() => updateTaskInStore(task.id, { isFavorite: !task.isFavorite })}>
             {task.isFavorite ? '取消收藏' : '收藏'}
           </button>
-          <button type="button" className="rounded-xl bg-blue-50 px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-100 dark:bg-blue-500/10 dark:text-blue-400" onClick={() => { retryTask(task); closeIfModal() }}>
-            重试
-          </button>
+          {task.origin !== 'restricted-agent' && (
+            <button type="button" className="rounded-xl bg-blue-50 px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-100 dark:bg-blue-500/10 dark:text-blue-400" onClick={() => { retryTask(task); closeIfModal() }}>
+              重试
+            </button>
+          )}
           <button type="button" className="rounded-xl bg-red-50 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-100 dark:bg-red-500/10 dark:text-red-400" onClick={handleDelete}>
             删除记录
           </button>

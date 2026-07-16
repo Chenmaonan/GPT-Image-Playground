@@ -52,4 +52,20 @@ describe('TaskCard', () => {
     expect(markup).toContain('title="编辑输出"')
     expect(markup).toContain('title="删除记录"')
   })
+
+  it('does not expose ordinary retry for restricted Agent tasks', () => {
+    const markup = renderToStaticMarkup(
+      <TaskCard
+        task={{ ...task, origin: 'restricted-agent', agentExecutionId: 'execution-1' }}
+        variant="compact"
+        selectionEnabled={false}
+        onClick={vi.fn()}
+        onReuse={vi.fn()}
+        onEditOutputs={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    )
+
+    expect(markup).not.toContain('title="重试任务"')
+  })
 })

@@ -1,131 +1,87 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_PARAMS } from '../types'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { RestrictedAgentExecution, RestrictedAgentPlan } from '../types'
+import { createRestrictedAgentPlan, executeRestrictedAgentPlan } from './agentExecutor'
 
-const storeMock = vi.hoisted(() => {
-  const state = {
-    inputImages: [] as Array<{ id: string; dataUrl: string }>,
-    setPrompt: vi.fn(),
-    setParams: vi.fn(),
-    showToast: vi.fn(),
-  }
-  return {
-    state,
-    submitTask: vi.fn<(options?: { onTaskCreated?: (taskId: string) => void }) => Promise<string | null>>(),
-  }
+const plan: RestrictedAgentPlan = {
+  id: 'plan-1',
+  version: 3,
+  status: 'awaiting_confirmation',
+  expiresAt: '2099-01-01T00:00:00.000Z',
+  originalRequest: '生成海报',
+  summary: '产品海报',
+  steps: [{ title: '生成图片', operation: 'generate' }],
+  generation: {
+    exactPrompt: '完整产品海报提示词',
+    action: 'generate',
+    size: '1024x1024',
+    quality: 'high',
+    outputFormat: 'png',
+    outputCompression: null,
+    imageCount: 1,
+  },
+  inputs: [],
+  assumptions: [],
+  warnings: [],
+  policyVersion: 'v1',
+}
+
+const execution: RestrictedAgentExecution = {
+  id: 'execution-1',
+  planId: plan.id,
+  status: 'queued',
+  cancelRequested: false,
+  error: null,
+  outputAssets: [],
+  createdAt: '2026-07-16T00:00:00.000Z',
+  startedAt: null,
+  completedAt: null,
+  updatedAt: '2026-07-16T00:00:00.000Z',
+}
+
+afterEach(() => {
+  vi.restoreAllMocks()
 })
 
-vi.mock('../store', () => ({
-  submitTask: storeMock.submitTask,
-  useStore: {
-    getState: () => storeMock.state,
-  },
-}))
+describe('restricted Agent gateway client', () => {
+  it('creates a plan with the allowlisted multipart fields only', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { enabled: true, csrfToken: 'csrf-1' } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: plan }), { status: 200 }))
 
-import { callAgentResponsesImageApi, storeBackedAgentExecutor } from './agentExecutor'
-
-describe('storeBackedAgentExecutor', () => {
-  beforeEach(() => {
-    vi.restoreAllMocks()
-    storeMock.state.inputImages = []
-    storeMock.state.setPrompt.mockClear()
-    storeMock.state.setParams.mockClear()
-    storeMock.state.showToast.mockClear()
-    storeMock.submitTask.mockReset()
-  })
-
-  it('delegates to submitTask and returns the created task id', async () => {
-    storeMock.state.inputImages = [{ id: 'image-a', dataUrl: 'data:image/png;base64,a' }]
-    storeMock.submitTask.mockImplementation(async (options) => {
-      options?.onTaskCreated?.('task-1')
-      return 'task-1'
-    })
-
-    const result = await storeBackedAgentExecutor.submit({
-      prompt: '生成海报',
-      inputImageIds: ['image-a'],
-      params: { ...DEFAULT_PARAMS, size: '1024x1024' },
-      stream: true,
-      imageCount: 2,
-    })
-
-    expect(result).toBe('task-1')
-    expect(storeMock.state.setPrompt).toHaveBeenCalledWith('生成海报')
-    expect(storeMock.state.setParams).toHaveBeenCalledWith({ ...DEFAULT_PARAMS, size: '1024x1024', n: 2 })
-    expect(storeMock.submitTask).toHaveBeenCalledTimes(1)
-    expect(storeMock.submitTask.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
-      callApi: expect.any(Function),
-      onTaskCreated: expect.any(Function),
-    }))
-  })
-
-  it('rejects requests that do not match current input images', async () => {
-    storeMock.state.inputImages = [{ id: 'image-a', dataUrl: 'data:image/png;base64,a' }]
-
-    const result = await storeBackedAgentExecutor.submit({
-      prompt: '生成海报',
-      inputImageIds: ['other-image'],
-      params: { ...DEFAULT_PARAMS },
-      stream: false,
+    const result = await createRestrictedAgentPlan({
+      request: '生成海报',
+      size: '1024x1024',
+      quality: 'high',
+      outputFormat: 'png',
+      outputCompression: null,
       imageCount: 1,
+      references: [{ dataUrl: 'data:image/png;base64,aW1hZ2U=' }],
     })
 
-    expect(result).toBeNull()
-    expect(storeMock.submitTask).not.toHaveBeenCalled()
-    expect(storeMock.state.showToast).toHaveBeenCalledWith('Agent 请求与当前输入图片不一致，未提交任务', 'error')
+    expect(result).toEqual(plan)
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/agent-api/v1/capabilities')
+    const [, init] = fetchMock.mock.calls[1]!
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('/agent-api/v1/plans')
+    expect(init?.headers).toMatchObject({ 'X-CSRF-Token': 'csrf-1' })
+    const body = init?.body as FormData
+    expect([...body.keys()].sort()).toEqual(['imageCount', 'outputFormat', 'quality', 'reference', 'request', 'size'])
+    expect(body.get('request')).toBe('生成海报')
+    expect(body.has('model')).toBe(false)
+    expect(body.has('tools')).toBe(false)
+    expect(body.has('upstream')).toBe(false)
   })
 
-  it('calls Responses API without the prompt rewrite guard in agent mode', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
-      output: [{
-        type: 'image_generation_call',
-        result: 'aW1hZ2U=',
-        revised_prompt: '完整海报提示词',
-      }],
-    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+  it('confirms by plan id and version without sending prompt or parameters', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: execution }), { status: 200 }))
 
-    const result = await callAgentResponsesImageApi({
-      settings: {
-        baseUrl: 'https://api.example.com/v1',
-        apiKey: 'test-key',
-        model: 'gpt-5.5',
-        timeout: 60,
-        apiMode: 'responses',
-        codexCli: false,
-        apiProxy: false,
-        customProviders: [],
-        providerOrder: undefined,
-        clearInputAfterSubmit: false,
-        persistInputOnRestart: true,
-        reuseTaskApiProfileTemporarily: false,
-        alwaysShowRetryButton: false,
-        enterSubmit: false,
-        agentStreaming: false,
-        agentImageCount: 1,
-        profiles: [{
-          id: 'default-openai',
-          name: '默认',
-          provider: 'openai',
-          baseUrl: 'https://api.example.com/v1',
-          apiKey: 'test-key',
-          model: 'gpt-5.5',
-          timeout: 60,
-          apiMode: 'responses',
-          codexCli: false,
-          apiProxy: false,
-        }],
-        activeProfileId: 'default-openai',
-      },
-      prompt: '生成海报',
-      params: { ...DEFAULT_PARAMS, n: 1 },
-      inputImageDataUrls: [],
-    }, { stream: false, imageCount: 1 })
+    const result = await executeRestrictedAgentPlan(plan)
 
-    expect(result.images).toHaveLength(1)
-    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))
-    expect(body.input).toBe('生成海报')
-    expect(body.input).not.toContain('Do not rewrite it')
-    expect(body.tools[0]).toMatchObject({ type: 'image_generation', action: 'generate' })
-    expect(body.tool_choice).toBe('required')
-    expect(body.stream).toBeUndefined()
+    expect(result).toEqual(execution)
+    const [url, init] = fetchMock.mock.calls[0]!
+    expect(url).toBe('/agent-api/v1/plans/plan-1/execute')
+    expect(init?.method).toBe('POST')
+    expect(init?.body).toBeUndefined()
+    expect(init?.headers).toMatchObject({ 'If-Match': '"3"', 'X-CSRF-Token': 'csrf-1' })
   })
 })
