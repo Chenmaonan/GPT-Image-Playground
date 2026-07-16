@@ -80,7 +80,7 @@ RUNTIME_SERVER_API_ENABLED=false
 RUNTIME_SERVER_API_MODEL=gpt-image-2
 RUNTIME_SERVER_API_MODE=images
 RUNTIME_SERVER_API_MODEL_OPTIONS='["gpt-image-2"]'
-RUNTIME_SERVER_API_MODE_OPTIONS='["images"]'
+RUNTIME_SERVER_API_MODE_OPTIONS='["images","responses"]'
 RUNTIME_SERVER_API_CODEX_CLI=false
 RUNTIME_SERVER_API_RESPONSE_FORMAT_B64_JSON=false
 RUNTIME_SERVER_API_TIMEOUT_SECONDS=600
@@ -145,7 +145,7 @@ if [ "$SERVER_API_CONFIG_ENABLED" = "true" ]; then
     }
 
     build_mode_options_json() {
-        input=${1:-$2}
+        input=${1:-images,responses}
         fallback=$2
         result="[\"$fallback\""
         seen="|$fallback|"

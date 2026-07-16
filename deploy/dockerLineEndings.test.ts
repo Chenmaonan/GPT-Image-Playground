@@ -13,3 +13,14 @@ describe('Docker entrypoint line endings', () => {
     })
   }
 })
+
+describe('Docker server-managed API defaults', () => {
+  it('exposes both implemented OpenAI image protocols by default', () => {
+    expect(readFileSync('deploy/Dockerfile', 'utf8')).toContain('ENV SERVER_API_MODE_OPTIONS=images,responses')
+    expect(readFileSync('docker-compose.yml', 'utf8')).toContain('SERVER_API_MODE_OPTIONS: ${SERVER_API_MODE_OPTIONS:-images,responses}')
+
+    const migrateScript = readFileSync('deploy/migrate-api-env.envsh', 'utf8')
+    expect(migrateScript).toContain('RUNTIME_SERVER_API_MODE_OPTIONS=\'["images","responses"]\'')
+    expect(migrateScript).toContain('input=${1:-images,responses}')
+  })
+})
