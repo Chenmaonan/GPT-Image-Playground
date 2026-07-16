@@ -201,6 +201,53 @@ describe('callImageApi', () => {
     expect(JSON.parse(String((init as RequestInit).body))).toMatchObject({ model: 'server-model' })
   })
 
+  it('uses deployment-allowed client model and API mode in managed mode', async () => {
+    initializeRuntimeConfig({
+      version: 1,
+      serverApi: {
+        enabled: true,
+        provider: 'openai',
+        model: 'gpt-image-2',
+        apiMode: 'images',
+        modelOptions: ['gpt-image-2', 'gpt-5.5'],
+        apiModeOptions: ['images', 'responses'],
+        codexCli: false,
+        responseFormatB64Json: false,
+        timeoutSeconds: 600,
+        proxyPath: '/managed-api',
+      },
+    })
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      output: [{
+        type: 'image_generation_call',
+        result: 'aW1hZ2U=',
+      }],
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+
+    await callImageApi({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        baseUrl: 'https://evil.example/v1',
+        apiKey: 'client-key',
+        model: 'gpt-5.5',
+        apiMode: 'responses',
+      },
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS },
+      inputImageDataUrls: [],
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/managed-api/responses',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    const [, init] = fetchMock.mock.calls[0]
+    expect(JSON.parse(String((init as RequestInit).body))).toMatchObject({ model: 'gpt-5.5' })
+  })
+
   it('omits the provider Authorization header in managed mode', async () => {
     initializeRuntimeConfig({
       version: 1,

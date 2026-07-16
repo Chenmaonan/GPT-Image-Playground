@@ -6,6 +6,7 @@ import {
   getEffectiveSettings,
   getRuntimeConfigState,
   getServerApiProxyPath,
+  getServerManagedApiOptions,
   getServerManagedApiProfile,
   initializeRuntimeConfig,
   isServerApiConfigEnabled,
@@ -21,6 +22,8 @@ const enabledRuntimeConfig = {
     provider: 'openai',
     model: 'gpt-image-2',
     apiMode: 'images',
+    modelOptions: ['gpt-image-2'],
+    apiModeOptions: ['images'],
     codexCli: false,
     responseFormatB64Json: false,
     timeoutSeconds: 600,
@@ -81,6 +84,7 @@ describe('initializeRuntimeConfig', () => {
         ...enabledRuntimeConfig.serverApi,
         model: '  gpt-image-2  ',
         apiMode: 'responses',
+        apiModeOptions: ['responses'],
         codexCli: true,
         responseFormatB64Json: true,
         timeoutSeconds: 120,
@@ -97,6 +101,8 @@ describe('initializeRuntimeConfig', () => {
           provider: 'openai',
           model: 'gpt-image-2',
           apiMode: 'responses',
+          modelOptions: ['gpt-image-2'],
+          apiModeOptions: ['responses'],
           codexCli: true,
           responseFormatB64Json: true,
           timeoutSeconds: 120,
@@ -107,6 +113,10 @@ describe('initializeRuntimeConfig', () => {
     expect(isServerApiConfigEnabled()).toBe(true)
     expect(isServerApiConfigUsable()).toBe(true)
     expect(getServerApiProxyPath()).toBe('/api-proxy')
+    expect(getServerManagedApiOptions()).toEqual({
+      modelOptions: ['gpt-image-2'],
+      apiModeOptions: ['responses'],
+    })
     expect(getServerManagedApiProfile()).toEqual({
       id: 'server-managed-openai',
       name: '服务端统一配置',
@@ -119,6 +129,51 @@ describe('initializeRuntimeConfig', () => {
       codexCli: true,
       apiProxy: true,
       responseFormatB64Json: true,
+    })
+  })
+
+  it('uses only deployment-provided API mode and model options in managed mode', () => {
+    initializeRuntimeConfig({
+      ...enabledRuntimeConfig,
+      serverApi: {
+        ...enabledRuntimeConfig.serverApi,
+        model: 'gpt-image-2',
+        apiMode: 'images',
+        modelOptions: ['gpt-image-2', 'gpt-5.5'],
+        apiModeOptions: ['images', 'responses'],
+      },
+    })
+
+    const selectedSettings: AppSettings = {
+      ...DEFAULT_SETTINGS,
+      model: 'gpt-5.5',
+      apiMode: 'responses',
+    }
+    expect(getServerManagedApiOptions()).toEqual({
+      modelOptions: ['gpt-image-2', 'gpt-5.5'],
+      apiModeOptions: ['images', 'responses'],
+    })
+    expect(getServerManagedApiProfile(selectedSettings)).toMatchObject({
+      model: 'gpt-5.5',
+      apiMode: 'responses',
+      baseUrl: '/api-proxy/v1',
+      apiKey: '',
+    })
+    expect(getEffectiveSettings(selectedSettings)).toMatchObject({
+      model: 'gpt-5.5',
+      apiMode: 'responses',
+      baseUrl: '/api-proxy/v1',
+      apiKey: '',
+    })
+
+    const forbiddenSettings: AppSettings = {
+      ...DEFAULT_SETTINGS,
+      model: 'forbidden-model',
+      apiMode: 'responses',
+    }
+    expect(getServerManagedApiProfile(forbiddenSettings)).toMatchObject({
+      model: 'gpt-image-2',
+      apiMode: 'responses',
     })
   })
 
@@ -202,7 +257,11 @@ describe('initializeRuntimeConfig', () => {
       { version: 1, serverApi: { enabled: true } },
       { ...enabledRuntimeConfig, serverApi: { ...enabledRuntimeConfig.serverApi, provider: 'fal' } },
       { ...enabledRuntimeConfig, serverApi: { ...enabledRuntimeConfig.serverApi, model: '   ' } },
+      { ...enabledRuntimeConfig, serverApi: { ...enabledRuntimeConfig.serverApi, modelOptions: [] } },
+      { ...enabledRuntimeConfig, serverApi: { ...enabledRuntimeConfig.serverApi, modelOptions: ['gpt-image-2', 'bad model'] } },
       { ...enabledRuntimeConfig, serverApi: { ...enabledRuntimeConfig.serverApi, apiMode: 'chat' } },
+      { ...enabledRuntimeConfig, serverApi: { ...enabledRuntimeConfig.serverApi, apiModeOptions: [] } },
+      { ...enabledRuntimeConfig, serverApi: { ...enabledRuntimeConfig.serverApi, apiModeOptions: ['images', 'chat'] } },
       { ...enabledRuntimeConfig, serverApi: { ...enabledRuntimeConfig.serverApi, codexCli: 0 } },
       { ...enabledRuntimeConfig, serverApi: { ...enabledRuntimeConfig.serverApi, responseFormatB64Json: 'false' } },
       { ...enabledRuntimeConfig, serverApi: { ...enabledRuntimeConfig.serverApi, timeoutSeconds: 9 } },
@@ -255,6 +314,36 @@ describe('sanitizeSettingsPatchForServerMode', () => {
       persistInputOnRestart: false,
       alwaysShowRetryButton: true,
       enterSubmit: true,
+      reuseTaskApiProfileTemporarily: false,
+    })
+  })
+
+  it('allows only listed API mode and model values in managed mode patches', () => {
+    initializeRuntimeConfig({
+      ...enabledRuntimeConfig,
+      serverApi: {
+        ...enabledRuntimeConfig.serverApi,
+        modelOptions: ['gpt-image-2', 'gpt-5.5'],
+        apiModeOptions: ['images', 'responses'],
+      },
+    })
+
+    expect(sanitizeSettingsPatchForServerMode({
+      model: 'gpt-5.5',
+      apiMode: 'responses',
+      baseUrl: 'https://upstream.example/v1',
+      apiKey: 'browser-secret',
+    })).toEqual({
+      model: 'gpt-5.5',
+      apiMode: 'responses',
+      reuseTaskApiProfileTemporarily: false,
+    })
+
+    expect(sanitizeSettingsPatchForServerMode({
+      model: 'forbidden-model',
+      apiMode: 'responses',
+    })).toEqual({
+      apiMode: 'responses',
       reuseTaskApiProfileTemporarily: false,
     })
   })

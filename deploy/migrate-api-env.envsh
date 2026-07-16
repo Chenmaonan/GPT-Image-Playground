@@ -16,6 +16,8 @@ SERVER_API_UPSTREAM_URL=${SERVER_API_UPSTREAM_URL-}
 SERVER_API_KEY=${SERVER_API_KEY-}
 SERVER_API_MODEL=${SERVER_API_MODEL-gpt-image-2}
 SERVER_API_MODE=${SERVER_API_MODE-images}
+SERVER_API_MODEL_OPTIONS=${SERVER_API_MODEL_OPTIONS-}
+SERVER_API_MODE_OPTIONS=${SERVER_API_MODE_OPTIONS-}
 SERVER_API_CODEX_CLI=${SERVER_API_CODEX_CLI-false}
 SERVER_API_RESPONSE_FORMAT_B64_JSON=${SERVER_API_RESPONSE_FORMAT_B64_JSON-false}
 SERVER_API_TIMEOUT_SECONDS=${SERVER_API_TIMEOUT_SECONDS-600}
@@ -77,6 +79,8 @@ esac
 RUNTIME_SERVER_API_ENABLED=false
 RUNTIME_SERVER_API_MODEL=gpt-image-2
 RUNTIME_SERVER_API_MODE=images
+RUNTIME_SERVER_API_MODEL_OPTIONS='["gpt-image-2"]'
+RUNTIME_SERVER_API_MODE_OPTIONS='["images"]'
 RUNTIME_SERVER_API_CODEX_CLI=false
 RUNTIME_SERVER_API_RESPONSE_FORMAT_B64_JSON=false
 RUNTIME_SERVER_API_TIMEOUT_SECONDS=600
@@ -94,6 +98,8 @@ if [ "$SERVER_API_CONFIG_ENABLED" = "true" ]; then
     require_single_line "$SERVER_API_KEY" 'SERVER_API_KEY'
     require_single_line "$SERVER_API_MODEL" 'SERVER_API_MODEL'
     require_single_line "$SERVER_API_MODE" 'SERVER_API_MODE'
+    require_single_line "$SERVER_API_MODEL_OPTIONS" 'SERVER_API_MODEL_OPTIONS'
+    require_single_line "$SERVER_API_MODE_OPTIONS" 'SERVER_API_MODE_OPTIONS'
     require_single_line "$SERVER_API_CODEX_CLI" 'SERVER_API_CODEX_CLI'
     require_single_line "$SERVER_API_RESPONSE_FORMAT_B64_JSON" 'SERVER_API_RESPONSE_FORMAT_B64_JSON'
     require_single_line "$SERVER_API_TIMEOUT_SECONDS" 'SERVER_API_TIMEOUT_SECONDS'
@@ -112,6 +118,62 @@ if [ "$SERVER_API_CONFIG_ENABLED" = "true" ]; then
         images|responses) ;;
         *) server_api_config_error 'SERVER_API_MODE must be images or responses' ;;
     esac
+
+    build_model_options_json() {
+        input=${1:-$2}
+        fallback=$2
+        result="[\"$fallback\""
+        seen="|$fallback|"
+        old_ifs=$IFS
+        IFS=,
+        for item in $input; do
+            item=$(printf '%s' "$item" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            if [ -z "$item" ] || [ "${#item}" -gt 256 ] || ! printf '%s\n' "$item" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._~:/+@=-]*$'; then
+                IFS=$old_ifs
+                server_api_config_error 'SERVER_API_MODEL_OPTIONS must be a comma-separated list of model IDs'
+            fi
+            case "$seen" in
+                *"|$item|"*) ;;
+                *)
+                    result="$result,\"$item\""
+                    seen="$seen$item|"
+                    ;;
+            esac
+        done
+        IFS=$old_ifs
+        printf '%s]\n' "$result"
+    }
+
+    build_mode_options_json() {
+        input=${1:-$2}
+        fallback=$2
+        result="[\"$fallback\""
+        seen="|$fallback|"
+        old_ifs=$IFS
+        IFS=,
+        for item in $input; do
+            item=$(printf '%s' "$item" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            case "$item" in
+                images|responses) ;;
+                *)
+                    IFS=$old_ifs
+                    server_api_config_error 'SERVER_API_MODE_OPTIONS must be a comma-separated list containing images and/or responses'
+                    ;;
+            esac
+            case "$seen" in
+                *"|$item|"*) ;;
+                *)
+                    result="$result,\"$item\""
+                    seen="$seen$item|"
+                    ;;
+            esac
+        done
+        IFS=$old_ifs
+        printf '%s]\n' "$result"
+    }
+
+    RUNTIME_SERVER_API_MODEL_OPTIONS=$(build_model_options_json "$SERVER_API_MODEL_OPTIONS" "$SERVER_API_MODEL")
+    RUNTIME_SERVER_API_MODE_OPTIONS=$(build_mode_options_json "$SERVER_API_MODE_OPTIONS" "$SERVER_API_MODE")
 
     case "$SERVER_API_CODEX_CLI" in
         true|false) ;;
@@ -163,9 +225,10 @@ if [ "$SERVER_API_CONFIG_ENABLED" = "true" ]; then
     API_PROXY_ERROR_LOG_PATH=/dev/null
     API_PROXY_ERROR_LOG_LEVEL=error
 
-    case "$SERVER_API_MODE" in
-        images) SERVER_API_ALLOWED_PATHS='^/api-proxy/((v1/)?(images/generations|images/edits))$' ;;
-        responses) SERVER_API_ALLOWED_PATHS='^/api-proxy/((v1/)?responses)$' ;;
+    case "$RUNTIME_SERVER_API_MODE_OPTIONS" in
+        *'"images"'*'"responses"'*|*'"responses"'*'"images"'*) SERVER_API_ALLOWED_PATHS='^/api-proxy/((v1/)?(images/generations|images/edits|responses))$' ;;
+        *'"images"'*) SERVER_API_ALLOWED_PATHS='^/api-proxy/((v1/)?(images/generations|images/edits))$' ;;
+        *'"responses"'*) SERVER_API_ALLOWED_PATHS='^/api-proxy/((v1/)?responses)$' ;;
     esac
 
     RUNTIME_SERVER_API_ENABLED=true
@@ -193,6 +256,8 @@ export API_PROXY_ERROR_LOG_LEVEL
 export RUNTIME_SERVER_API_ENABLED
 export RUNTIME_SERVER_API_MODEL
 export RUNTIME_SERVER_API_MODE
+export RUNTIME_SERVER_API_MODEL_OPTIONS
+export RUNTIME_SERVER_API_MODE_OPTIONS
 export RUNTIME_SERVER_API_CODEX_CLI
 export RUNTIME_SERVER_API_RESPONSE_FORMAT_B64_JSON
 export RUNTIME_SERVER_API_TIMEOUT_SECONDS

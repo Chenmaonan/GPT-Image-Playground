@@ -1,4 +1,4 @@
-import type { ApiProfile, AppSettings } from '../types'
+import type { ApiMode, ApiProfile, AppSettings } from '../types'
 import { getActiveApiProfile } from './apiProfiles'
 
 export const SERVER_MANAGED_PROFILE_ID = 'server-managed-openai'
@@ -14,6 +14,8 @@ interface EnabledServerApiConfig {
   provider: 'openai'
   model: string
   apiMode: 'images' | 'responses'
+  modelOptions: string[]
+  apiModeOptions: ApiMode[]
   codexCli: boolean
   responseFormatB64Json: boolean
   timeoutSeconds: number
@@ -36,6 +38,8 @@ const SERVER_API_KEYS = new Set([
   'provider',
   'model',
   'apiMode',
+  'modelOptions',
+  'apiModeOptions',
   'codexCli',
   'responseFormatB64Json',
   'timeoutSeconds',
@@ -78,6 +82,44 @@ function normalizeProxyPath(value: unknown): string {
   return `/${segments.join('/')}`
 }
 
+function normalizeModelId(value: unknown, label: string): string {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new Error(`${label} 不能为空`)
+  }
+  const trimmed = value.trim()
+  if (trimmed.length > 256 || !/^[A-Za-z0-9][A-Za-z0-9._~:/+@=-]*$/.test(trimmed)) {
+    throw new Error(`${label} 格式无效`)
+  }
+  return trimmed
+}
+
+function uniqueItems<T>(items: T[]): T[] {
+  return [...new Set(items)]
+}
+
+function normalizeApiModeOptions(value: unknown, fallback: ApiMode): ApiMode[] {
+  if (value === undefined) return [fallback]
+  if (!Array.isArray(value) || !value.length) throw new Error('serverApi.apiModeOptions 必须是非空数组')
+
+  const options = uniqueItems(value.map((item) => {
+    if (item !== 'images' && item !== 'responses') {
+      throw new Error('serverApi.apiModeOptions 只能包含 images 或 responses')
+    }
+    return item
+  }))
+  if (!options.includes(fallback)) options.unshift(fallback)
+  return options
+}
+
+function normalizeModelOptions(value: unknown, fallback: string): string[] {
+  if (value === undefined) return [fallback]
+  if (!Array.isArray(value) || !value.length) throw new Error('serverApi.modelOptions 必须是非空数组')
+
+  const options = uniqueItems(value.map((item) => normalizeModelId(item, 'serverApi.modelOptions')))
+  if (!options.includes(fallback)) options.unshift(fallback)
+  return options
+}
+
 function parsePublicRuntimeConfig(raw: unknown): PublicRuntimeConfig {
   if (!isRecord(raw)) throw new Error('运行时配置必须是对象')
   assertAllowedKeys(raw, TOP_LEVEL_KEYS, '运行时配置')
@@ -92,12 +134,13 @@ function parsePublicRuntimeConfig(raw: unknown): PublicRuntimeConfig {
   }
 
   if (serverApi.provider !== 'openai') throw new Error('serverApi.provider 必须是 openai')
-  if (typeof serverApi.model !== 'string' || !serverApi.model.trim()) {
-    throw new Error('serverApi.model 不能为空')
-  }
+  const model = normalizeModelId(serverApi.model, 'serverApi.model')
   if (serverApi.apiMode !== 'images' && serverApi.apiMode !== 'responses') {
     throw new Error('serverApi.apiMode 必须是 images 或 responses')
   }
+  const apiMode = serverApi.apiMode
+  const apiModeOptions = normalizeApiModeOptions(serverApi.apiModeOptions, apiMode)
+  const modelOptions = normalizeModelOptions(serverApi.modelOptions, model)
   if (typeof serverApi.codexCli !== 'boolean') throw new Error('serverApi.codexCli 必须是布尔值')
   if (typeof serverApi.responseFormatB64Json !== 'boolean') {
     throw new Error('serverApi.responseFormatB64Json 必须是布尔值')
@@ -116,8 +159,10 @@ function parsePublicRuntimeConfig(raw: unknown): PublicRuntimeConfig {
     serverApi: {
       enabled: true,
       provider: 'openai',
-      model: serverApi.model.trim(),
-      apiMode: serverApi.apiMode,
+      model,
+      apiMode,
+      apiModeOptions,
+      modelOptions,
       codexCli: serverApi.codexCli,
       responseFormatB64Json: serverApi.responseFormatB64Json,
       timeoutSeconds: serverApi.timeoutSeconds,
@@ -168,19 +213,41 @@ export function getServerApiProxyPath(): string {
     : DEFAULT_SERVER_API_PROXY_PATH
 }
 
-export function getServerManagedApiProfile(): ApiProfile | null {
+export function getServerManagedApiOptions(): { apiModeOptions: ApiMode[]; modelOptions: string[] } | null {
   if (runtimeState.status !== 'ready' || !runtimeState.config.serverApi.enabled) return null
 
   const config = runtimeState.config.serverApi
+  return {
+    apiModeOptions: config.apiModeOptions,
+    modelOptions: config.modelOptions,
+  }
+}
+
+function getSelectedManagedApiMode(settings: Partial<AppSettings> | undefined, config: EnabledServerApiConfig): ApiMode {
+  const selected = settings?.apiMode
+  return selected && config.apiModeOptions.includes(selected) ? selected : config.apiMode
+}
+
+function getSelectedManagedModel(settings: Partial<AppSettings> | undefined, config: EnabledServerApiConfig): string {
+  const selected = typeof settings?.model === 'string' ? settings.model.trim() : ''
+  return selected && config.modelOptions.includes(selected) ? selected : config.model
+}
+
+export function getServerManagedApiProfile(settings?: Partial<AppSettings>): ApiProfile | null {
+  if (runtimeState.status !== 'ready' || !runtimeState.config.serverApi.enabled) return null
+
+  const config = runtimeState.config.serverApi
+  const apiMode = getSelectedManagedApiMode(settings, config)
+  const model = getSelectedManagedModel(settings, config)
   return {
     id: SERVER_MANAGED_PROFILE_ID,
     name: '服务端统一配置',
     provider: 'openai',
     baseUrl: `${config.proxyPath}/v1`,
     apiKey: '',
-    model: config.model,
+    model,
     timeout: config.timeoutSeconds,
-    apiMode: config.apiMode,
+    apiMode,
     codexCli: config.codexCli,
     apiProxy: true,
     responseFormatB64Json: config.responseFormatB64Json,
@@ -189,12 +256,12 @@ export function getServerManagedApiProfile(): ApiProfile | null {
 
 export function getEffectiveApiProfile(settings: AppSettings): ApiProfile {
   if (runtimeState.status !== 'ready') throw new Error(SERVER_API_CONFIG_UNAVAILABLE_MESSAGE)
-  return getServerManagedApiProfile() ?? getActiveApiProfile(settings)
+  return getServerManagedApiProfile(settings) ?? getActiveApiProfile(settings)
 }
 
 export function getEffectiveSettings(settings: AppSettings): AppSettings {
   if (runtimeState.status !== 'ready') throw new Error(SERVER_API_CONFIG_UNAVAILABLE_MESSAGE)
-  const profile = getServerManagedApiProfile()
+  const profile = getServerManagedApiProfile(settings)
   if (!profile) return settings
 
   return {
@@ -219,6 +286,11 @@ export function sanitizeSettingsPatchForServerMode(patch: Partial<AppSettings>):
 
   const sanitized: Partial<AppSettings> = {
     reuseTaskApiProfileTemporarily: false,
+  }
+  if (runtimeState.status === 'ready' && runtimeState.config.serverApi.enabled) {
+    const config = runtimeState.config.serverApi
+    if (patch.apiMode && config.apiModeOptions.includes(patch.apiMode)) sanitized.apiMode = patch.apiMode
+    if (typeof patch.model === 'string' && config.modelOptions.includes(patch.model.trim())) sanitized.model = patch.model.trim()
   }
   if (typeof patch.clearInputAfterSubmit === 'boolean') sanitized.clearInputAfterSubmit = patch.clearInputAfterSubmit
   if (typeof patch.persistInputOnRestart === 'boolean') sanitized.persistInputOnRestart = patch.persistInputOnRestart

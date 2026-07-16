@@ -25,6 +25,7 @@ import { copyTextToClipboard, getClipboardFailureMessage } from '../lib/clipboar
 import {
   getEffectiveApiProfile,
   getRuntimeConfigState,
+  getServerManagedApiOptions,
   isServerApiConfigEnabled,
   isServerApiConfigUsable,
 } from '../lib/serverApiConfig'
@@ -333,6 +334,7 @@ export default function SettingsModal() {
   const serverManaged = isServerApiConfigEnabled() || runtimeConfigState.status !== 'ready'
   const serverConfigUsable = isServerApiConfigUsable()
   const serverProfile = serverConfigUsable ? getEffectiveApiProfile(draft) : null
+  const serverApiOptions = serverConfigUsable ? getServerManagedApiOptions() : null
   const apiProxyConfig = readClientDevProxyConfig()
   const apiProxyAvailable = isApiProxyAvailable(apiProxyConfig)
   const apiProxyLocked = isApiProxyLocked(apiProxyConfig)
@@ -1248,13 +1250,39 @@ export default function SettingsModal() {
                     </div>
                     <div className="rounded-xl bg-white/70 px-3 py-2.5 dark:bg-white/[0.05]">
                       <dt className="text-xs text-gray-500 dark:text-gray-400">API 接口</dt>
-                      <dd className="mt-1 font-medium text-gray-800 dark:text-gray-100">
-                        {serverProfile ? (serverProfile.apiMode === 'responses' ? 'Responses API' : 'Images API') : '不可用'}
+                      <dd className="mt-1">
+                        {serverProfile && serverApiOptions ? (
+                          <Select
+                            value={serverProfile.apiMode}
+                            onChange={(value) => {
+                              const apiMode = value as AppSettings['apiMode']
+                              commitSettings({ ...draft, apiMode })
+                            }}
+                            options={serverApiOptions.apiModeOptions.map((mode) => ({
+                              label: mode === 'responses' ? 'Responses API (/v1/responses)' : 'Images API (/v1/images)',
+                              value: mode,
+                            }))}
+                            className="w-full rounded-lg border border-blue-100 bg-white/80 px-2 py-1.5 text-xs text-gray-700 outline-none dark:border-blue-500/20 dark:bg-white/[0.04] dark:text-gray-100"
+                          />
+                        ) : (
+                          <span className="font-medium text-gray-800 dark:text-gray-100">不可用</span>
+                        )}
                       </dd>
                     </div>
                     <div className="rounded-xl bg-white/70 px-3 py-2.5 dark:bg-white/[0.05]">
                       <dt className="text-xs text-gray-500 dark:text-gray-400">模型</dt>
-                      <dd className="mt-1 break-all font-medium text-gray-800 dark:text-gray-100">{serverProfile?.model || '不可用'}</dd>
+                      <dd className="mt-1">
+                        {serverProfile && serverApiOptions ? (
+                          <Select
+                            value={serverProfile.model}
+                            onChange={(model) => commitSettings({ ...draft, model })}
+                            options={serverApiOptions.modelOptions.map((model) => ({ label: model, value: model }))}
+                            className="w-full rounded-lg border border-blue-100 bg-white/80 px-2 py-1.5 text-xs text-gray-700 outline-none dark:border-blue-500/20 dark:bg-white/[0.04] dark:text-gray-100"
+                          />
+                        ) : (
+                          <span className="font-medium text-gray-800 dark:text-gray-100">不可用</span>
+                        )}
+                      </dd>
                     </div>
                     <div className="rounded-xl bg-white/70 px-3 py-2.5 dark:bg-white/[0.05]">
                       <dt className="text-xs text-gray-500 dark:text-gray-400">请求超时</dt>
@@ -1263,6 +1291,9 @@ export default function SettingsModal() {
                       </dd>
                     </div>
                   </dl>
+                  <p className="mt-3 text-xs leading-5 text-blue-800/80 dark:text-blue-200/80">
+                    API 地址和密钥由服务端固定；这里只能在部署端预设的接口模式和模型列表中选择。
+                  </p>
                 </div>
               ) : (
               <div className="space-y-4">
