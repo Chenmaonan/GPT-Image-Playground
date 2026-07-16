@@ -625,7 +625,7 @@ describe('server-managed API configuration', () => {
     })
   })
 
-  it('ignores API settings patches while preserving general preferences', () => {
+  it('ignores fixed API settings while allowing custom managed model selection', () => {
     useStore.getState().setSettings({
       apiKey: 'attacker-key',
       model: 'attacker-model',
@@ -636,8 +636,9 @@ describe('server-managed API configuration', () => {
     const settings = useStore.getState().settings
     expect(settings.profiles.find((profile) => profile.id === clientProfile.id)).toMatchObject({
       apiKey: 'original-key',
-      model: 'client-model',
+      model: 'attacker-model',
     })
+    expect(settings.model).toBe('attacker-model')
     expect(settings.activeProfileId).toBe(clientProfile.id)
     expect(settings.clearInputAfterSubmit).toBe(true)
     expect(settings.reuseTaskApiProfileTemporarily).toBe(false)
@@ -678,7 +679,7 @@ describe('server-managed API configuration', () => {
     }))
 
     expect(resolved).toEqual(getEffectiveApiProfile(useStore.getState().settings))
-    expect(resolved).toMatchObject({ id: 'server-managed-openai', provider: 'openai', model: 'server-model' })
+    expect(resolved).toMatchObject({ id: 'server-managed-openai', provider: 'openai', model: 'client-model' })
   })
 
   it('reuses only task input and parameters without selecting its API profile', async () => {
@@ -709,7 +710,7 @@ describe('server-managed API configuration', () => {
       apiProvider: 'openai',
       apiProfileId: 'server-managed-openai',
       apiProfileName: '服务端统一配置',
-      apiModel: 'server-model',
+      apiModel: 'client-model',
     })
     expect(useStore.getState().showSettings).toBe(false)
   })

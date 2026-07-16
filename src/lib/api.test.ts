@@ -160,7 +160,7 @@ describe('callImageApi', () => {
     )
   })
 
-  it('forces the managed proxy path and model over client settings', async () => {
+  it('forces the managed proxy path while allowing a safe custom model by default', async () => {
     initializeRuntimeConfig({
       version: 1,
       serverApi: {
@@ -198,7 +198,7 @@ describe('callImageApi', () => {
       expect.objectContaining({ method: 'POST' }),
     )
     const [, init] = fetchMock.mock.calls[0]
-    expect(JSON.parse(String((init as RequestInit).body))).toMatchObject({ model: 'server-model' })
+    expect(JSON.parse(String((init as RequestInit).body))).toMatchObject({ model: 'client-model' })
   })
 
   it('uses deployment-allowed client model and API mode in managed mode', async () => {

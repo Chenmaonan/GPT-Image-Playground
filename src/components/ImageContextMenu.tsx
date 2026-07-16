@@ -3,6 +3,12 @@ import { useStore, addImageFromUrl, ensureImageCached } from '../store'
 import { copyBlobToClipboard, getClipboardFailureMessage } from '../lib/clipboard'
 import { CopyIcon, DownloadIcon, EditIcon } from './icons'
 
+export function shouldUseNativeImageContextMenu(target: EventTarget | null): boolean {
+  const closest = (target as { closest?: unknown } | null)?.closest
+  if (typeof closest !== 'function') return false
+  return Boolean((closest as (selector: string) => unknown).call(target, '[data-lightbox-root]'))
+}
+
 export default function ImageContextMenu() {
   const [menuInfo, setMenuInfo] = useState<{ src: string; imageId?: string; x: number; y: number } | null>(null)
   const showToast = useStore((s) => s.showToast)
@@ -18,6 +24,8 @@ export default function ImageContextMenu() {
     const onContextMenu = (e: MouseEvent) => {
       const target = e.target as HTMLElement
       if (target && target.tagName === 'IMG') {
+        if (shouldUseNativeImageContextMenu(target)) return
+
         const imgTarget = target as HTMLImageElement
         // 忽略没有 src 或空的 img
         if (!imgTarget.src) return

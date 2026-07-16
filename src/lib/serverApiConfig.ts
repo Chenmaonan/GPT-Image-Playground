@@ -16,6 +16,7 @@ interface EnabledServerApiConfig {
   apiMode: 'images' | 'responses'
   modelOptions: string[]
   apiModeOptions: ApiMode[]
+  allowCustomModel: boolean
   codexCli: boolean
   responseFormatB64Json: boolean
   timeoutSeconds: number
@@ -40,6 +41,7 @@ const SERVER_API_KEYS = new Set([
   'apiMode',
   'modelOptions',
   'apiModeOptions',
+  'allowCustomModel',
   'codexCli',
   'responseFormatB64Json',
   'timeoutSeconds',
@@ -93,6 +95,10 @@ function normalizeModelId(value: unknown, label: string): string {
   return trimmed
 }
 
+function isValidModelId(value: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9._~:/+@=-]{0,255}$/.test(value)
+}
+
 function uniqueItems<T>(items: T[]): T[] {
   return [...new Set(items)]
 }
@@ -141,6 +147,8 @@ function parsePublicRuntimeConfig(raw: unknown): PublicRuntimeConfig {
   const apiMode = serverApi.apiMode
   const apiModeOptions = normalizeApiModeOptions(serverApi.apiModeOptions, apiMode)
   const modelOptions = normalizeModelOptions(serverApi.modelOptions, model)
+  const allowCustomModel = serverApi.allowCustomModel === undefined ? true : serverApi.allowCustomModel
+  if (typeof allowCustomModel !== 'boolean') throw new Error('serverApi.allowCustomModel 必须是布尔值')
   if (typeof serverApi.codexCli !== 'boolean') throw new Error('serverApi.codexCli 必须是布尔值')
   if (typeof serverApi.responseFormatB64Json !== 'boolean') {
     throw new Error('serverApi.responseFormatB64Json 必须是布尔值')
@@ -163,6 +171,7 @@ function parsePublicRuntimeConfig(raw: unknown): PublicRuntimeConfig {
       apiMode,
       apiModeOptions,
       modelOptions,
+      allowCustomModel,
       codexCli: serverApi.codexCli,
       responseFormatB64Json: serverApi.responseFormatB64Json,
       timeoutSeconds: serverApi.timeoutSeconds,
@@ -213,13 +222,14 @@ export function getServerApiProxyPath(): string {
     : DEFAULT_SERVER_API_PROXY_PATH
 }
 
-export function getServerManagedApiOptions(): { apiModeOptions: ApiMode[]; modelOptions: string[] } | null {
+export function getServerManagedApiOptions(): { apiModeOptions: ApiMode[]; modelOptions: string[]; allowCustomModel: boolean } | null {
   if (runtimeState.status !== 'ready' || !runtimeState.config.serverApi.enabled) return null
 
   const config = runtimeState.config.serverApi
   return {
     apiModeOptions: config.apiModeOptions,
     modelOptions: config.modelOptions,
+    allowCustomModel: config.allowCustomModel,
   }
 }
 
@@ -230,6 +240,7 @@ function getSelectedManagedApiMode(settings: Partial<AppSettings> | undefined, c
 
 function getSelectedManagedModel(settings: Partial<AppSettings> | undefined, config: EnabledServerApiConfig): string {
   const selected = typeof settings?.model === 'string' ? settings.model.trim() : ''
+  if (selected && config.allowCustomModel && isValidModelId(selected)) return selected
   return selected && config.modelOptions.includes(selected) ? selected : config.model
 }
 
@@ -290,7 +301,10 @@ export function sanitizeSettingsPatchForServerMode(patch: Partial<AppSettings>):
   if (runtimeState.status === 'ready' && runtimeState.config.serverApi.enabled) {
     const config = runtimeState.config.serverApi
     if (patch.apiMode && config.apiModeOptions.includes(patch.apiMode)) sanitized.apiMode = patch.apiMode
-    if (typeof patch.model === 'string' && config.modelOptions.includes(patch.model.trim())) sanitized.model = patch.model.trim()
+    if (typeof patch.model === 'string') {
+      const model = patch.model.trim()
+      if (config.modelOptions.includes(model) || (config.allowCustomModel && isValidModelId(model))) sanitized.model = model
+    }
   }
   if (typeof patch.clearInputAfterSubmit === 'boolean') sanitized.clearInputAfterSubmit = patch.clearInputAfterSubmit
   if (typeof patch.persistInputOnRestart === 'boolean') sanitized.persistInputOnRestart = patch.persistInputOnRestart

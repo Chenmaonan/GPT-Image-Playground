@@ -1298,7 +1298,22 @@ export default function SettingsModal() {
                     <div className="rounded-xl bg-white/70 px-3 py-2.5 dark:bg-white/[0.05]">
                       <dt className="text-xs text-gray-500 dark:text-gray-400">模型</dt>
                       <dd className="mt-1">
-                        {serverProfile && serverApiOptions ? (
+                        {serverProfile && serverApiOptions?.allowCustomModel ? (
+                          <>
+                            <input
+                              list="server-managed-model-options"
+                              value={serverProfile.model}
+                              onChange={(event) => commitSettings(applyServerManagedSelectionToDraft(draft, { model: event.target.value }))}
+                              className="w-full rounded-lg border border-blue-100 bg-white/80 px-2 py-1.5 text-xs text-gray-700 outline-none transition focus:border-blue-300 focus:ring-2 focus:ring-blue-500/20 dark:border-blue-500/20 dark:bg-white/[0.04] dark:text-gray-100"
+                              placeholder={serverApiOptions.modelOptions[0] ?? '输入模型 ID'}
+                            />
+                            <datalist id="server-managed-model-options">
+                              {serverApiOptions.modelOptions.map((model) => (
+                                <option key={model} value={model} />
+                              ))}
+                            </datalist>
+                          </>
+                        ) : serverProfile && serverApiOptions ? (
                           <Select
                             value={serverProfile.model}
                             onChange={(model) => commitSettings(applyServerManagedSelectionToDraft(draft, { model }))}
@@ -1318,7 +1333,7 @@ export default function SettingsModal() {
                     </div>
                   </dl>
                   <p className="mt-3 text-xs leading-5 text-blue-800/80 dark:text-blue-200/80">
-                    API 地址和密钥由服务端固定；这里只能在部署端预设的接口模式和模型列表中选择。
+                    API 地址和密钥由服务端固定；接口模式只能在部署端预设范围内选择，模型{serverApiOptions?.allowCustomModel ? '可选择预设项或输入自定义模型 ID' : '只能在部署端预设列表中选择'}。
                   </p>
                 </div>
               ) : (

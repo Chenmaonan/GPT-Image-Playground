@@ -103,6 +103,7 @@ describe('initializeRuntimeConfig', () => {
           apiMode: 'responses',
           modelOptions: ['gpt-image-2'],
           apiModeOptions: ['responses'],
+          allowCustomModel: true,
           codexCli: true,
           responseFormatB64Json: true,
           timeoutSeconds: 120,
@@ -116,6 +117,7 @@ describe('initializeRuntimeConfig', () => {
     expect(getServerManagedApiOptions()).toEqual({
       modelOptions: ['gpt-image-2'],
       apiModeOptions: ['responses'],
+      allowCustomModel: true,
     })
     expect(getServerManagedApiProfile()).toEqual({
       id: 'server-managed-openai',
@@ -132,7 +134,7 @@ describe('initializeRuntimeConfig', () => {
     })
   })
 
-  it('uses only deployment-provided API mode and model options in managed mode', () => {
+  it('uses deployment-provided API mode options and allows safe custom models by default', () => {
     initializeRuntimeConfig({
       ...enabledRuntimeConfig,
       serverApi: {
@@ -152,6 +154,7 @@ describe('initializeRuntimeConfig', () => {
     expect(getServerManagedApiOptions()).toEqual({
       modelOptions: ['gpt-image-2', 'gpt-5.5'],
       apiModeOptions: ['images', 'responses'],
+      allowCustomModel: true,
     })
     expect(getServerManagedApiProfile(selectedSettings)).toMatchObject({
       model: 'gpt-5.5',
@@ -172,8 +175,31 @@ describe('initializeRuntimeConfig', () => {
       apiMode: 'responses',
     }
     expect(getServerManagedApiProfile(forbiddenSettings)).toMatchObject({
-      model: 'gpt-image-2',
+      model: 'forbidden-model',
       apiMode: 'responses',
+    })
+  })
+
+  it('falls back to configured model options when custom model input is disabled', () => {
+    initializeRuntimeConfig({
+      ...enabledRuntimeConfig,
+      serverApi: {
+        ...enabledRuntimeConfig.serverApi,
+        modelOptions: ['gpt-image-2', 'gpt-5.5'],
+        allowCustomModel: false,
+      },
+    })
+
+    expect(getServerManagedApiOptions()).toEqual({
+      modelOptions: ['gpt-image-2', 'gpt-5.5'],
+      apiModeOptions: ['images'],
+      allowCustomModel: false,
+    })
+    expect(getServerManagedApiProfile({ ...DEFAULT_SETTINGS, model: 'custom-model' })).toMatchObject({
+      model: 'gpt-image-2',
+    })
+    expect(getServerManagedApiProfile({ ...DEFAULT_SETTINGS, model: 'gpt-5.5' })).toMatchObject({
+      model: 'gpt-5.5',
     })
   })
 
@@ -186,7 +212,7 @@ describe('initializeRuntimeConfig', () => {
     expect(getServerManagedApiProfile()?.baseUrl).toBe('/api-proxy/v1')
   })
 
-  it('keeps general preferences and removes dormant API configuration', () => {
+  it('keeps general preferences and custom model while removing fixed API configuration', () => {
     initializeRuntimeConfig(enabledRuntimeConfig)
     const clientSettings: AppSettings = {
       ...DEFAULT_SETTINGS,
@@ -225,7 +251,7 @@ describe('initializeRuntimeConfig', () => {
       enterSubmit: true,
       baseUrl: '/api-proxy/v1',
       apiKey: '',
-      model: 'gpt-image-2',
+      model: 'client-model',
       timeout: 600,
       apiMode: 'images',
       codexCli: false,
@@ -234,7 +260,7 @@ describe('initializeRuntimeConfig', () => {
     })
     expect(effective.customProviders).toEqual([])
     expect(effective.providerOrder).toEqual(['openai'])
-    expect(effective.profiles).toEqual([getServerManagedApiProfile()])
+    expect(effective.profiles).toEqual([getServerManagedApiProfile(clientSettings)])
     expect(JSON.stringify(effective)).not.toContain('browser-secret')
     expect(JSON.stringify(effective)).not.toContain('upstream.example')
   })
@@ -262,6 +288,7 @@ describe('initializeRuntimeConfig', () => {
       { ...enabledRuntimeConfig, serverApi: { ...enabledRuntimeConfig.serverApi, apiMode: 'chat' } },
       { ...enabledRuntimeConfig, serverApi: { ...enabledRuntimeConfig.serverApi, apiModeOptions: [] } },
       { ...enabledRuntimeConfig, serverApi: { ...enabledRuntimeConfig.serverApi, apiModeOptions: ['images', 'chat'] } },
+      { ...enabledRuntimeConfig, serverApi: { ...enabledRuntimeConfig.serverApi, allowCustomModel: 'true' } },
       { ...enabledRuntimeConfig, serverApi: { ...enabledRuntimeConfig.serverApi, codexCli: 0 } },
       { ...enabledRuntimeConfig, serverApi: { ...enabledRuntimeConfig.serverApi, responseFormatB64Json: 'false' } },
       { ...enabledRuntimeConfig, serverApi: { ...enabledRuntimeConfig.serverApi, timeoutSeconds: 9 } },
@@ -314,11 +341,12 @@ describe('sanitizeSettingsPatchForServerMode', () => {
       persistInputOnRestart: false,
       alwaysShowRetryButton: true,
       enterSubmit: true,
+      model: 'client-model',
       reuseTaskApiProfileTemporarily: false,
     })
   })
 
-  it('allows only listed API mode and model values in managed mode patches', () => {
+  it('allows listed API mode and safe custom model values in managed mode patches by default', () => {
     initializeRuntimeConfig({
       ...enabledRuntimeConfig,
       serverApi: {
@@ -340,10 +368,37 @@ describe('sanitizeSettingsPatchForServerMode', () => {
     })
 
     expect(sanitizeSettingsPatchForServerMode({
-      model: 'forbidden-model',
+      model: 'custom-model',
       apiMode: 'responses',
     })).toEqual({
+      model: 'custom-model',
       apiMode: 'responses',
+      reuseTaskApiProfileTemporarily: false,
+    })
+  })
+
+  it('filters custom model patches when custom model input is disabled', () => {
+    initializeRuntimeConfig({
+      ...enabledRuntimeConfig,
+      serverApi: {
+        ...enabledRuntimeConfig.serverApi,
+        modelOptions: ['gpt-image-2', 'gpt-5.5'],
+        allowCustomModel: false,
+      },
+    })
+
+    expect(sanitizeSettingsPatchForServerMode({
+      model: 'custom-model',
+      apiMode: 'images',
+    })).toEqual({
+      apiMode: 'images',
+      reuseTaskApiProfileTemporarily: false,
+    })
+
+    expect(sanitizeSettingsPatchForServerMode({
+      model: 'gpt-5.5',
+    })).toEqual({
+      model: 'gpt-5.5',
       reuseTaskApiProfileTemporarily: false,
     })
   })
