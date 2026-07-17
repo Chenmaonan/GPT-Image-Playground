@@ -211,7 +211,7 @@ Gateway 只在 Compose 内网暴露 `3000`，图片和 SQLite 数据保存在 `a
 
 > ⚠️ **付费代理风险**：统一模式会暴露一个可消耗服务端额度的同源代理入口，项目本身不提供登录、租户隔离或完整限流。公网部署必须在外层增加认证、VPN、IP 白名单、网关限流等访问控制；仅隐藏 API Key 不能防止额度被滥用。
 
-> 静态托管无法安全保存服务端 Key，也无法实现覆盖 Authorization 的反向代理，因此纯静态 Vercel、GitHub Pages、Netlify 等部署不能直接启用此模式。需要使用本 Docker/Nginx 实现，或自行实现等价的 `/runtime-config.json` 与 `/api-proxy/` 服务端协议。
+> 静态托管无法安全保存服务端 Key，也无法实现覆盖 Authorization 的反向代理，因此纯静态 Vercel、GitHub Pages、Netlify 等部署不能直接启用此模式。普通 `npm run build` 会以 `DEPLOY_TARGET=static` 构建并直接使用浏览器端 Legacy 配置，不依赖运行时配置文件。需要服务端统一配置或受限 Agent 时，应使用本 Docker/Nginx 实现；非 Docker 的等价实现必须在构建环境中显式设置 `DEPLOY_TARGET=runtime`，并提供 `/runtime-config.json` 及相应同源服务端协议。runtime 构建在配置缺失、加载失败或校验失败时始终拒绝提交，不会回退到浏览器凭据。
 
 **1. 服务端统一配置：Docker CLI 示例**
 

@@ -489,6 +489,22 @@ describe('sanitizeSettingsPatchForServerMode', () => {
 })
 
 describe('loadRuntimeConfig', () => {
+  it('skips runtime-config fetch and restores Legacy client settings for static builds', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const clientSettings = createClientSettingsWithCredentials()
+
+    await loadRuntimeConfig(false)
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(getRuntimeConfigState()).toEqual({
+      status: 'ready',
+      config: { version: 1, serverApi: { enabled: false } },
+    })
+    expect(getEffectiveApiProfile(clientSettings)).toEqual(clientSettings.profiles[0])
+    expect(getEffectiveSettings(clientSettings)).toEqual(clientSettings)
+  })
+
   it('throws instead of returning client credentials while runtime configuration is loading', async () => {
     let resolveResponse!: (value: unknown) => void
     const responsePromise = new Promise((resolve) => {
@@ -526,12 +542,26 @@ describe('loadRuntimeConfig', () => {
     expect(isServerApiConfigUsable()).toBe(true)
   })
 
-  it('records an error when loading fails', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 503 }))
+  it('keeps runtime deployments fail-closed when runtime-config returns 404', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 }))
 
-    await loadRuntimeConfig()
+    await loadRuntimeConfig(true)
 
-    expect(getRuntimeConfigState()).toEqual({ status: 'error', error: 'HTTP 503' })
+    expect(getRuntimeConfigState()).toEqual({ status: 'error', error: 'HTTP 404' })
+    expect(() => getEffectiveApiProfile(createClientSettingsWithCredentials())).toThrow(runtimeConfigUnavailableMessage)
+    expect(isServerApiConfigUsable()).toBe(false)
+  })
+
+  it('keeps runtime deployments fail-closed when runtime-config schema is invalid', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ version: 0, serverApi: { enabled: false } }),
+    }))
+
+    await loadRuntimeConfig(true)
+
+    expect(getRuntimeConfigState()).toEqual({ status: 'error', error: '不支持的运行时配置版本' })
+    expect(() => getEffectiveSettings(createClientSettingsWithCredentials())).toThrow(runtimeConfigUnavailableMessage)
     expect(isServerApiConfigUsable()).toBe(false)
   })
 })

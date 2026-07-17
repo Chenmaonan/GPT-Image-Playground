@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import { readFileSync } from 'fs'
 import { normalizeDevProxyConfig } from './src/lib/devProxy'
@@ -17,7 +17,17 @@ function loadDevProxyConfig() {
   }
 }
 
-export default defineConfig(({ command }) => {
+export default defineConfig(({ command, mode }) => {
+  const fileEnv = loadEnv(mode, process.cwd(), '')
+  const deployTarget = (process.env.DEPLOY_TARGET || fileEnv.DEPLOY_TARGET || '').trim()
+  const runtimeConfigRequired = command === 'build'
+    ? (() => {
+        if (deployTarget !== 'static' && deployTarget !== 'runtime') {
+          throw new Error('DEPLOY_TARGET must be static or runtime for production builds')
+        }
+        return deployTarget === 'runtime'
+      })()
+    : true
   const devProxyConfig = command === 'serve' ? loadDevProxyConfig() : null
 
   return {
@@ -26,6 +36,7 @@ export default defineConfig(({ command }) => {
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version),
       __DEV_PROXY_CONFIG__: JSON.stringify(devProxyConfig),
+      __RUNTIME_CONFIG_REQUIRED__: JSON.stringify(runtimeConfigRequired),
     },
     server: {
       host: true,

@@ -1,6 +1,8 @@
 import type { ApiMode, ApiProfile, AppSettings } from '../types'
 import { getActiveApiProfile } from './apiProfiles'
 
+declare const __RUNTIME_CONFIG_REQUIRED__: boolean
+
 export const SERVER_MANAGED_PROFILE_ID = 'server-managed-openai'
 export const DEFAULT_SERVER_API_PROXY_PATH = '/api-proxy'
 export const DEFAULT_RESTRICTED_AGENT_BASE_PATH = '/agent-api/v1'
@@ -59,6 +61,7 @@ const SERVER_API_KEYS = new Set([
 const SAFE_PROXY_PATH_SEGMENT = /^[A-Za-z0-9._~-]+$/
 
 let runtimeState: RuntimeConfigState = { status: 'loading' }
+const STATIC_RUNTIME_CONFIG: PublicRuntimeConfig = { version: 1, serverApi: { enabled: false } }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -225,8 +228,12 @@ export function initializeRuntimeConfig(raw: unknown): RuntimeConfigState {
   return runtimeState
 }
 
-export async function loadRuntimeConfig(): Promise<void> {
+export async function loadRuntimeConfig(required = __RUNTIME_CONFIG_REQUIRED__): Promise<void> {
   runtimeState = { status: 'loading' }
+  if (!required) {
+    runtimeState = { status: 'ready', config: STATIC_RUNTIME_CONFIG }
+    return
+  }
   try {
     const response = await fetch(`${import.meta.env.BASE_URL}runtime-config.json`, { cache: 'no-store' })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)

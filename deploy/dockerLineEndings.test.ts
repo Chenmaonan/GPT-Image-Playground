@@ -16,6 +16,12 @@ describe('Docker entrypoint line endings', () => {
 })
 
 describe('Docker server-managed API defaults', () => {
+  it('compiles the frontend as a runtime-config-required build', () => {
+    const dockerfile = readFileSync('deploy/Dockerfile', 'utf8')
+    expect(dockerfile).toContain('ENV DEPLOY_TARGET=runtime')
+    expect(dockerfile.indexOf('ENV DEPLOY_TARGET=runtime')).toBeLessThan(dockerfile.indexOf('RUN npm run build'))
+  })
+
   it('exposes both implemented OpenAI image protocols by default', () => {
     expect(readFileSync('deploy/Dockerfile', 'utf8')).toContain('ENV SERVER_API_MODE_OPTIONS=images,responses')
     expect(readFileSync('docker-compose.yml', 'utf8')).toContain('SERVER_API_MODE_OPTIONS: ${SERVER_API_MODE_OPTIONS:-images,responses}')
@@ -70,15 +76,23 @@ describe('Restricted Agent deployment boundary', () => {
     expect(injector).toContain('"$RUNTIME_RESTRICTED_AGENT_ONLY"')
   })
 
-  it('publishes only the same-origin Agent entrypoint in runtime config', () => {
+  it('keeps the static runtime config backward-compatible and disabled', () => {
     const runtimeConfigText = readFileSync('public/runtime-config.json', 'utf8')
     const runtimeConfig = JSON.parse(runtimeConfigText)
-    expect(runtimeConfig.restrictedAgent).toEqual({
-      enabled: false,
-      basePath: '/agent-api/v1',
-      agentOnly: false,
-    })
+    expect(runtimeConfig).toEqual({ version: 1, serverApi: { enabled: false } })
     expect(runtimeConfigText).not.toMatch(/apiKey|sessionSecret|upstream/i)
+  })
+
+  it('emits minimal mutually exclusive runtime schemas for each capability mode', () => {
+    const injector = readFileSync('deploy/inject-api-url.sh', 'utf8')
+    expect(injector).toContain('if [ "$RUNTIME_SERVER_API_ENABLED" = "true" ]; then')
+    expect(injector).toContain('elif [ "$RUNTIME_RESTRICTED_AGENT_ENABLED" = "true" ]; then')
+    expect(injector).toContain('"serverApi": { "enabled": false }')
+    expect(injector).toContain('"restrictedAgent": {')
+    expect(injector).toContain('"provider": "openai"')
+    expect(injector).toContain('"proxyPath": "/api-proxy"')
+    expect(injector).toContain('RUNTIME_CONFIG_TMP=${RUNTIME_CONFIG_PATH}.tmp')
+    expect(injector).toContain('mv "$RUNTIME_CONFIG_TMP" "$RUNTIME_CONFIG_PATH"')
   })
 
   it('defines an internal-only, persistent and health-checked Gateway service', () => {

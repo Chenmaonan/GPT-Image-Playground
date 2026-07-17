@@ -1,9 +1,4 @@
 {
   "version": 1,
-  "serverApi": { "enabled": false },
-  "restrictedAgent": {
-    "enabled": false,
-    "basePath": "/agent-api/v1",
-    "agentOnly": false
-  }
+  "serverApi": { "enabled": false }
 }
