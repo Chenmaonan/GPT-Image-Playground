@@ -59,6 +59,17 @@ describe('Restricted Agent deployment boundary', () => {
     expect(entrypoint).toContain('if [ "$ENABLE_API_PROXY" != "true" ] || [ "$RESTRICTED_AGENT_ENABLED" = "true" ]')
   })
 
+  it('normalizes agent-only independently without hiding Legacy when Agent is disabled', () => {
+    const migrate = readFileSync('deploy/migrate-api-env.envsh', 'utf8')
+    expect(migrate).toContain('RESTRICTED_AGENT_ONLY=${RESTRICTED_AGENT_ONLY-false}')
+    expect(migrate).toContain("*) server_api_config_error 'RESTRICTED_AGENT_ONLY must be true or false'")
+    expect(migrate).toContain('if [ "$RESTRICTED_AGENT_ENABLED" != "true" ]; then\n    RESTRICTED_AGENT_ONLY=false')
+    expect(migrate).toContain('RUNTIME_RESTRICTED_AGENT_ONLY=$RESTRICTED_AGENT_ONLY')
+
+    const injector = readFileSync('deploy/inject-api-url.sh', 'utf8')
+    expect(injector).toContain('"$RUNTIME_RESTRICTED_AGENT_ONLY"')
+  })
+
   it('publishes only the same-origin Agent entrypoint in runtime config', () => {
     const runtimeConfigText = readFileSync('public/runtime-config.json', 'utf8')
     const runtimeConfig = JSON.parse(runtimeConfigText)
@@ -77,6 +88,7 @@ describe('Restricted Agent deployment boundary', () => {
     expect(compose).toContain('dockerfile: Dockerfile')
     expect(compose).not.toContain('profiles:')
     expect(compose.match(/RESTRICTED_AGENT_ENABLED: \$\{RESTRICTED_AGENT_ENABLED:-false\}/g)).toHaveLength(2)
+    expect(compose).toContain('RESTRICTED_AGENT_ONLY: ${RESTRICTED_AGENT_ONLY:-false}')
     expect(compose).toContain('./deploy/run-agent-gateway.sh:/usr/local/bin/run-agent-gateway.sh:ro')
     expect(compose).toContain('command: ["/bin/sh", "/usr/local/bin/run-agent-gateway.sh"]')
     expect(compose).toContain('agent-gateway-data:/data')

@@ -99,13 +99,16 @@ function normalizeRestrictedAgentConfig(value: unknown): RestrictedAgentRuntimeC
   assertAllowedKeys(value, RESTRICTED_AGENT_KEYS, 'restrictedAgent')
   if (typeof value.enabled !== 'boolean') throw new Error('restrictedAgent.enabled 必须是布尔值')
   if (typeof value.agentOnly !== 'boolean') throw new Error('restrictedAgent.agentOnly 必须是布尔值')
-  if (value.agentOnly && !value.enabled) throw new Error('restrictedAgent.agentOnly 只能在启用 Agent 时使用')
 
   const basePath = value.basePath === undefined ? DEFAULT_RESTRICTED_AGENT_BASE_PATH : value.basePath
   if (typeof basePath !== 'string' || basePath.trim() !== DEFAULT_RESTRICTED_AGENT_BASE_PATH) {
     throw new Error(`restrictedAgent.basePath 必须是 ${DEFAULT_RESTRICTED_AGENT_BASE_PATH}`)
   }
-  return { enabled: value.enabled, basePath: DEFAULT_RESTRICTED_AGENT_BASE_PATH, agentOnly: value.agentOnly }
+  return {
+    enabled: value.enabled,
+    basePath: DEFAULT_RESTRICTED_AGENT_BASE_PATH,
+    agentOnly: value.enabled ? value.agentOnly : false,
+  }
 }
 
 function normalizeModelId(value: unknown, label: string): string {

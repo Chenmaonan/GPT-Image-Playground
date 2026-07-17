@@ -6,6 +6,7 @@ import { getActiveApiProfile, normalizeSettings } from '../lib/apiProfiles'
 import {
   getEffectiveApiProfile,
   getRuntimeConfigState,
+  isRestrictedAgentEnabled,
   isServerApiConfigEnabled,
   isServerApiConfigUsable,
 } from '../lib/serverApiConfig'
@@ -16,6 +17,7 @@ import { normalizeImageSize } from '../lib/size'
 import { createMaskPreviewDataUrl } from '../lib/canvasImage'
 import { dismissAllTooltips } from '../lib/tooltipDismiss'
 import { getSafeBoundingClientRect } from '../lib/domRect'
+import { storeBackedAgentExecutor } from '../lib/agentExecutor'
 import { useRestrictedAgentStore } from '../restrictedAgentStore'
 import Select from './Select'
 import SizePickerModal from './SizePickerModal'
@@ -475,18 +477,33 @@ export default function InputBar({ onTaskSubmitted, layout = 'default' }: InputB
     return normalizeSettings({ ...settings, profiles, activeProfileId: activeProfile.id })
   }, [activeProfile, currentActiveProfile.id, serverManaged, settings])
   const isAgentLayout = layout === 'agent'
-  const hasSubmitApiConfig = isAgentLayout ? true : (serverManaged ? serverConfigUsable : Boolean(activeProfile.apiKey))
-  const agentBusy = agentFlowPhase === 'planning' || agentFlowPhase === 'confirming' || agentFlowPhase === 'executing'
+  const isRestrictedAgentLayout = isAgentLayout && isRestrictedAgentEnabled()
+  const hasSubmitApiConfig = isRestrictedAgentLayout ? true : (serverManaged ? serverConfigUsable : Boolean(activeProfile.apiKey))
+  const agentBusy = isRestrictedAgentLayout && (agentFlowPhase === 'planning' || agentFlowPhase === 'confirming' || agentFlowPhase === 'executing')
   const canSubmit = Boolean(prompt.trim() && hasSubmitApiConfig && !agentBusy)
   const handleSubmit = useCallback(async () => {
-    if (layout === 'agent') {
+    if (isRestrictedAgentLayout) {
       await createAgentPlan()
       return
     }
 
-    const taskId = await submitTask()
+    if (isAgentLayout && (activeProfile.provider !== 'openai' || activeProfile.apiMode !== 'responses')) {
+      showToast('Agent 模式需要使用 OpenAI 兼容的 Responses API 配置', 'error')
+      if (!serverManaged) setShowSettings(true)
+      return
+    }
+
+    const taskId = isAgentLayout
+      ? await storeBackedAgentExecutor.submit({
+        prompt: prompt.trim(),
+        inputImageIds: inputImages.map((image) => image.id),
+        params,
+        stream: settings.agentStreaming,
+        imageCount: settings.agentImageCount,
+      })
+      : await submitTask()
     if (taskId) onTaskSubmitted?.(taskId)
-  }, [createAgentPlan, layout, onTaskSubmitted])
+  }, [activeProfile.apiMode, activeProfile.provider, createAgentPlan, inputImages, isAgentLayout, isRestrictedAgentLayout, onTaskSubmitted, params, prompt, serverManaged, setShowSettings, settings.agentImageCount, settings.agentStreaming, showToast])
   const missingApiConfigMessage = serverManaged
     ? '服务端 API 配置不可用，请联系部署管理员'
     : '尚未完成 API 配置，请在右上角设置中进行'
@@ -1911,7 +1928,7 @@ export default function InputBar({ onTaskSubmitted, layout = 'default' }: InputB
                         ? `bg-gray-300 dark:bg-white/[0.06] text-white ${serverManaged ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`
                         : 'bg-blue-500 text-white hover:bg-blue-600 disabled:bg-gray-300 dark:disabled:bg-white/[0.04] disabled:opacity-50 disabled:cursor-not-allowed'
                     }`}
-                    title={hasSubmitApiConfig ? (isAgentLayout ? '生成执行计划 (Ctrl+Enter)' : maskDraft ? '遮罩编辑 (Ctrl+Enter)' : '生成 (Ctrl+Enter)') : missingApiConfigTitle}
+                    title={hasSubmitApiConfig ? (isRestrictedAgentLayout ? '生成执行计划 (Ctrl+Enter)' : maskDraft ? '遮罩编辑 (Ctrl+Enter)' : '生成 (Ctrl+Enter)') : missingApiConfigTitle}
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
@@ -1968,12 +1985,12 @@ export default function InputBar({ onTaskSubmitted, layout = 'default' }: InputB
                         ? `bg-gray-300 dark:bg-white/[0.06] text-white ${serverManaged ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`
                         : 'bg-blue-500 text-white hover:bg-blue-600 disabled:bg-gray-300 dark:disabled:bg-white/[0.04] disabled:opacity-50 disabled:cursor-not-allowed'
                     }`}
-                    title={hasSubmitApiConfig ? (isAgentLayout ? '生成执行计划' : maskDraft ? '遮罩编辑' : '生成图像') : missingApiConfigTitle}
+                    title={hasSubmitApiConfig ? (isRestrictedAgentLayout ? '生成执行计划' : maskDraft ? '遮罩编辑' : '生成图像') : missingApiConfigTitle}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
                     </svg>
-                    {isAgentLayout ? (agentFlowPhase === 'planning' ? '规划中…' : '生成计划') : maskDraft ? '遮罩编辑' : '生成图像'}
+                    {isRestrictedAgentLayout ? (agentFlowPhase === 'planning' ? '规划中…' : '生成计划') : maskDraft ? '遮罩编辑' : '生成图像'}
                   </button>
                 </div>
               </div>

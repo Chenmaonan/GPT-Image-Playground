@@ -40,7 +40,7 @@ if ! printf '{\n  "version": 1,\n  "serverApi": {\n    "enabled": %s,\n    "prov
     "$RUNTIME_SERVER_API_RESPONSE_FORMAT_B64_JSON" \
     "$RUNTIME_SERVER_API_TIMEOUT_SECONDS" \
     "$RUNTIME_RESTRICTED_AGENT_ENABLED" \
-    "$RUNTIME_RESTRICTED_AGENT_ENABLED" \
+    "$RUNTIME_RESTRICTED_AGENT_ONLY" \
     2>/dev/null > "$RUNTIME_CONFIG_TMP"
 then
     container_config_error 'failed to write runtime configuration'

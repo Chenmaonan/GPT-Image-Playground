@@ -1,7 +1,9 @@
 import { useMemo } from 'react'
 import { useRestrictedAgentStore } from '../restrictedAgentStore'
+import { isRestrictedAgentEnabled } from '../lib/serverApiConfig'
 import type { RestrictedAgentExecutionStatus, TaskRecord } from '../types'
 import AgentPlanCard from './AgentPlanCard'
+import LegacyAgentMainWorkspace from './LegacyAgentMainWorkspace'
 import TaskDetailContent from './TaskDetailContent'
 
 interface AgentMainWorkspaceProps {
@@ -17,7 +19,7 @@ const STATUS_LABELS: Record<RestrictedAgentExecutionStatus, string> = {
   failed_unknown: '执行状态不确定，不会自动重试',
 }
 
-export default function AgentMainWorkspace({ task }: AgentMainWorkspaceProps) {
+function RestrictedAgentMainWorkspace({ task }: AgentMainWorkspaceProps) {
   const phase = useRestrictedAgentStore((state) => state.phase)
   const plan = useRestrictedAgentStore((state) => state.plan)
   const execution = useRestrictedAgentStore((state) => state.execution)
@@ -132,4 +134,10 @@ export default function AgentMainWorkspace({ task }: AgentMainWorkspaceProps) {
       </div>
     </section>
   )
+}
+
+export default function AgentMainWorkspace(props: AgentMainWorkspaceProps) {
+  return isRestrictedAgentEnabled()
+    ? <RestrictedAgentMainWorkspace {...props} />
+    : <LegacyAgentMainWorkspace {...props} />
 }

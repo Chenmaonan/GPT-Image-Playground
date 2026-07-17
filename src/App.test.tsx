@@ -24,7 +24,7 @@ vi.mock('./restrictedAgentStore', () => ({
 }))
 vi.mock('./lib/serverApiConfig', () => ({
   isRestrictedAgentEnabled: () => runtimeConfigMock.enabled,
-  isRestrictedAgentOnly: () => runtimeConfigMock.agentOnly,
+  isRestrictedAgentOnly: () => runtimeConfigMock.enabled && runtimeConfigMock.agentOnly,
 }))
 
 vi.mock('./components/Header', () => ({ default: () => <div data-component="header" /> }))
@@ -43,8 +43,8 @@ vi.mock('./components/ImageContextMenu', () => ({ default: () => <div data-compo
 
 import App from './App'
 
-describe('App gallery home', () => {
-  it('defaults to gallery mode and hides templates from gallery', () => {
+describe('App workspace entry', () => {
+  it('keeps the legacy gallery and Agent entries when restricted Agent is disabled', () => {
     runtimeConfigMock.enabled = false
     runtimeConfigMock.agentOnly = false
     const markup = renderToStaticMarkup(<App />)
@@ -56,8 +56,22 @@ describe('App gallery home', () => {
     expect(searchIndex).toBeGreaterThan(-1)
     expect(taskGridIndex).toBeGreaterThan(searchIndex)
     expect(markup).toContain('data-component="input-bar"')
-    expect(markup).not.toContain('role="tablist"')
-    expect(markup).not.toContain('>Agent<')
+    expect(markup).toContain('role="tablist"')
+    expect(markup).toContain('画廊')
+    expect(markup).toContain('Agent')
+    expect(markup).not.toContain('data-component="agent-workspace"')
+  })
+
+  it('keeps both workspace entries when restricted Agent is enabled but not agent-only', () => {
+    runtimeConfigMock.enabled = true
+    runtimeConfigMock.agentOnly = false
+
+    const markup = renderToStaticMarkup(<App />)
+
+    expect(markup).toContain('role="tablist"')
+    expect(markup).toContain('画廊')
+    expect(markup).toContain('Agent')
+    expect(markup).toContain('data-component="task-grid"')
     expect(markup).not.toContain('data-component="agent-workspace"')
   })
 

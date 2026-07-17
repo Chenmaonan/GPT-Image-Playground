@@ -1,3 +1,5 @@
+export * from './legacyAgentExecutor'
+
 /**
  * 兼容旧导入路径。
  *

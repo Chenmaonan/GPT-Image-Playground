@@ -22,7 +22,7 @@ export default function App() {
   const setSettings = useStore((s) => s.setSettings)
   const recoverRestrictedAgent = useRestrictedAgentStore((s) => s.recover)
   const restrictedAgentEnabled = isRestrictedAgentEnabled()
-  const restrictedAgentOnly = isRestrictedAgentOnly()
+  const restrictedAgentOnly = restrictedAgentEnabled && isRestrictedAgentOnly()
   const [workspaceMode, setWorkspaceMode] = useState<'gallery' | 'agent'>(() => restrictedAgentOnly ? 'agent' : 'gallery')
   const [activeAgentTaskId, setActiveAgentTaskId] = useState<string | null>(null)
   useDockerApiUrlMigrationNotice()
@@ -43,9 +43,11 @@ export default function App() {
 
     void (async () => {
       await initStore()
-      await recoverRestrictedAgent(useStore.getState().tasks)
+      if (restrictedAgentEnabled) {
+        await recoverRestrictedAgent(useStore.getState().tasks)
+      }
     })()
-  }, [recoverRestrictedAgent, setSettings])
+  }, [recoverRestrictedAgent, restrictedAgentEnabled, setSettings])
 
   useEffect(() => {
     const preventPageImageDrag = (e: DragEvent) => {
@@ -67,7 +69,7 @@ export default function App() {
             ? 'w-full max-w-[96rem] 2xl:max-w-[108rem]'
             : 'max-w-7xl'
         }`}>
-          {restrictedAgentEnabled && !restrictedAgentOnly && <div data-no-drag-select className="mt-6 flex justify-center">
+          {!restrictedAgentOnly && <div data-no-drag-select className="mt-6 flex justify-center">
             <div className="inline-flex rounded-2xl border border-gray-200 bg-white p-1 shadow-sm dark:border-white/[0.08] dark:bg-gray-900" role="tablist" aria-label="工作区模式">
               <button
                 type="button"

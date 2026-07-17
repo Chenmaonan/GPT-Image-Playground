@@ -165,6 +165,42 @@ describe('initializeRuntimeConfig', () => {
     expect(getRestrictedAgentBasePath()).toBe('/agent-api/v1')
   })
 
+  it.each([
+    { serverEnabled: false, agentEnabled: false, requestedAgentOnly: false, expectedStatus: 'ready', expectedAgentOnly: false },
+    { serverEnabled: false, agentEnabled: false, requestedAgentOnly: true, expectedStatus: 'ready', expectedAgentOnly: false },
+    { serverEnabled: false, agentEnabled: true, requestedAgentOnly: false, expectedStatus: 'ready', expectedAgentOnly: false },
+    { serverEnabled: false, agentEnabled: true, requestedAgentOnly: true, expectedStatus: 'ready', expectedAgentOnly: true },
+    { serverEnabled: true, agentEnabled: false, requestedAgentOnly: false, expectedStatus: 'ready', expectedAgentOnly: false },
+    { serverEnabled: true, agentEnabled: false, requestedAgentOnly: true, expectedStatus: 'ready', expectedAgentOnly: false },
+    { serverEnabled: true, agentEnabled: true, requestedAgentOnly: false, expectedStatus: 'error', expectedAgentOnly: false },
+    { serverEnabled: true, agentEnabled: true, requestedAgentOnly: true, expectedStatus: 'error', expectedAgentOnly: false },
+  ])(
+    'normalizes dual-mode state: server=$serverEnabled agent=$agentEnabled agentOnly=$requestedAgentOnly',
+    ({ serverEnabled, agentEnabled, requestedAgentOnly, expectedStatus, expectedAgentOnly }) => {
+      const state = initializeRuntimeConfig({
+        version: 1,
+        serverApi: serverEnabled ? enabledRuntimeConfig.serverApi : { enabled: false },
+        restrictedAgent: {
+          enabled: agentEnabled,
+          basePath: '/agent-api/v1',
+          agentOnly: requestedAgentOnly,
+        },
+      })
+
+      expect(state.status).toBe(expectedStatus)
+      expect(isServerApiConfigEnabled()).toBe(expectedStatus === 'ready' && serverEnabled)
+      expect(isRestrictedAgentEnabled()).toBe(expectedStatus === 'ready' && agentEnabled)
+      expect(isRestrictedAgentOnly()).toBe(expectedAgentOnly)
+      if (state.status === 'ready') {
+        expect(state.config.restrictedAgent).toEqual({
+          enabled: agentEnabled,
+          basePath: '/agent-api/v1',
+          agentOnly: expectedAgentOnly,
+        })
+      }
+    },
+  )
+
   it('uses deployment-provided API mode options and allows safe custom models by default', () => {
     initializeRuntimeConfig({
       ...enabledRuntimeConfig,
@@ -340,7 +376,6 @@ describe('initializeRuntimeConfig', () => {
       { version: 1, serverApi: { enabled: false }, restrictedAgent: true },
       { version: 1, serverApi: { enabled: false }, restrictedAgent: { enabled: 'true', basePath: '/agent-api/v1', agentOnly: true } },
       { version: 1, serverApi: { enabled: false }, restrictedAgent: { enabled: true, basePath: '/other', agentOnly: true } },
-      { version: 1, serverApi: { enabled: false }, restrictedAgent: { enabled: false, basePath: '/agent-api/v1', agentOnly: true } },
       { version: 1, serverApi: { enabled: false }, restrictedAgent: { enabled: true, basePath: '/agent-api/v1', agentOnly: true, apiKey: 'secret' } },
       { ...enabledRuntimeConfig, restrictedAgent: { enabled: true, basePath: '/agent-api/v1', agentOnly: true } },
     ]
